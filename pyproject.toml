@@ -1,0 +1,33 @@
+[project]
+name = "garmin-mcp-lite"
+version = "0.1.0"
+description = "精简版 Garmin MCP 服务器 - 专为耐力运动爱好者设计"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.6.0",
+    "garminconnect>=0.2.25",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
