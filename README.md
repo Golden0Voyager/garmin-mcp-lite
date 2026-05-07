@@ -1,5 +1,8 @@
 # Garmin MCP Lite
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+
 精简版 Garmin MCP 服务器，专为耐力运动爱好者设计。
 
 ## 核心工具（10个替代80+）
@@ -53,10 +56,32 @@ mcp_servers:
     args:
       - run
       - --directory
-      - /Users/hainingyu/Code/garmin_mcp_lite
+      - /path/to/garmin_mcp_lite
       - python
       - -m
       - garmin_mcp_lite.server
+```
+
+## Claude Desktop 配置
+
+在 `~/Library/Application Support/Claude/claude_desktop_config.json` 中添加：
+
+```json
+{
+  "mcpServers": {
+    "garmin-lite": {
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "/path/to/garmin_mcp_lite",
+        "python",
+        "-m",
+        "garmin_mcp_lite.server"
+      ]
+    }
+  }
+}
 ```
 
 ## 与原版对比
@@ -68,3 +93,10 @@ mcp_servers:
 | 聚合查询 | 无 | `fields` 参数控制详情粒度 |
 | 写操作 | 大量（体重/营养/装备） | 仅读（装备/体重由苹果健康同步） |
 | 维护成本 | 依赖上游 | 自主可控 |
+
+## 许可证
+
+[MIT](LICENSE) © 2026 Haining Yu
+
+本项目基于第三方库 [garminconnect](https://github.com/cyberjunky/python-garminconnect)（MIT）封装，
+非 Garmin 官方产品，使用前请遵守 Garmin Connect 服务条款。
