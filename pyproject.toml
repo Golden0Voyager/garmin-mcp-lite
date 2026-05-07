@@ -2,12 +2,33 @@
 name = "garmin-mcp-lite"
 version = "0.1.0"
 description = "精简版 Garmin MCP 服务器 - 专为耐力运动爱好者设计"
+readme = "README.md"
+license = { file = "LICENSE" }
 requires-python = ">=3.11"
+authors = [
+    { name = "Haining Yu", email = "yhn0535@gmail.com" },
+]
+keywords = ["mcp", "garmin", "garmin-connect", "fitness", "endurance", "llm"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+]
 dependencies = [
     "mcp>=1.6.0",
     "garminconnect>=0.2.25",
     "pydantic>=2.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/Golden0Voyager/garmin-mcp-lite"
+Repository = "https://github.com/Golden0Voyager/garmin-mcp-lite"
+Issues = "https://github.com/Golden0Voyager/garmin-mcp-lite/issues"
 
 [project.optional-dependencies]
 dev = [
