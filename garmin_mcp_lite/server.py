@@ -9,6 +9,8 @@ from garmin_mcp_lite.tools import (
     hr_trend,
     training,
     weekly_stats,
+    events,
+    challenges,
 )
 
 mcp = FastMCP("garmin-mcp-lite")
@@ -23,6 +25,11 @@ mcp.add_tool(device.get_device_info, name="garmin_device")
 mcp.add_tool(hr_trend.get_hr_trend, name="garmin_hr_trend")
 mcp.add_tool(weekly_stats.get_weekly_stats, name="garmin_weekly_stats")
 mcp.add_tool(coach.get_coach_plans, name="garmin_coach")
+mcp.add_tool(events.get_events, name="garmin_events")
+mcp.add_tool(challenges.get_challenges, name="garmin_challenges")
+
+def main():
+    mcp.run()
 
 if __name__ == "__main__":
-    mcp.run()
+    main()

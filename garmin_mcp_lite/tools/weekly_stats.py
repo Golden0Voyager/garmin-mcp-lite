@@ -8,10 +8,10 @@ from garmin_mcp_lite.tools._common import activity_type_key
 def get_weekly_stats(
     period: Literal["week", "month", "year"] = "week",
 ) -> dict:
-    """获取周/月/年运动统计汇总。
+    """Get aggregated training volume statistics for a given period.
 
     Args:
-        period: 统计周期
+        period: Time period. One of: "week" (7 days), "month" (30 days), "year" (365 days).
     """
     client = get_client()
 

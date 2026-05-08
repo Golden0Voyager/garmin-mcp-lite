@@ -2,10 +2,10 @@ from garmin_mcp_lite.client import get_client
 
 
 def get_gear_list() -> dict:
-    """获取装备库列表及里程信息。"""
+    """Get the gear library (shoes, bikes, etc.) with real cumulative mileage for each item."""
     client = get_client()
 
-    # 获取 userProfileNumber
+    # Get userProfileNumber
     profile = client.get_user_profile()
     user_profile_number = profile.get("id")
 
@@ -13,11 +13,22 @@ def get_gear_list() -> dict:
     items = []
 
     for g in gear:
+        uuid = g.get("uuid")
+        distance_meters = 0
+        
+        # 获取该装备的详细统计信息（含累计里程）
+        if uuid:
+            try:
+                stats = client.get_gear_stats(uuid)
+                distance_meters = stats.get("totalDistance", 0)
+            except Exception:
+                distance_meters = 0
+
         items.append({
-            "id": g.get("uuid"),
-            "name": g.get("customMakeModel", g.get("gearMakeName", "未知")),
+            "id": uuid,
+            "name": g.get("customMakeModel") or g.get("gearMakeName") or "未知",
             "type": g.get("gearTypeName"),
-            "distance_km": round(g.get("distance", 0) / 1000, 1),
+            "distance_km": round(distance_meters / 1000, 1),
             "max_distance_km": (
                 round(g.get("maximumMeters", 0) / 1000, 1)
                 if g.get("maximumMeters")

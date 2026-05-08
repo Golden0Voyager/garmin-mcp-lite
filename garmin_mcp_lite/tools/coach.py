@@ -14,7 +14,7 @@ def _summarize_plan(plan_id, detail: dict) -> dict:
 
 
 def get_coach_plans() -> dict:
-    """获取 Garmin Coach 训练计划列表。"""
+    """List active Garmin Coach training plans."""
     client = get_client()
 
     try:
@@ -27,7 +27,7 @@ def get_coach_plans() -> dict:
         if isinstance(plan, dict):
             result.append(_summarize_plan(plan.get("trainingPlanId"), plan))
         elif isinstance(plan, str):
-            # 可能是 plan ID，尝试获取详情
+            # May be a plan ID — attempt to fetch details
             try:
                 detail = client.get_training_plan_by_id(plan)
                 if isinstance(detail, dict):

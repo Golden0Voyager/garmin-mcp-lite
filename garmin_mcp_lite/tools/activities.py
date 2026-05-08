@@ -15,13 +15,13 @@ def list_activities(
     activity_type: Literal["running", "cycling", "swimming", "diving", "all"] = "all",
     limit: int = 10,
 ) -> dict:
-    """获取活动列表，支持按日期范围和类型筛选。
+    """List recent activities filtered by date range and type.
 
     Args:
-        start_date: 开始日期 (YYYY-MM-DD)，默认7天前
-        end_date: 结束日期 (YYYY-MM-DD)，默认今天
-        activity_type: 活动类型过滤
-        limit: 返回条数上限
+        start_date: Start date in YYYY-MM-DD format. Defaults to 7 days ago.
+        end_date: End date in YYYY-MM-DD format. Defaults to today.
+        activity_type: Filter by sport type. One of: running, cycling, swimming, diving, all.
+        limit: Maximum number of activities to return.
     """
     client = get_client()
 
@@ -63,12 +63,13 @@ def list_activities(
 
 
 def get_activity_detail(activity_id: int, fields: list[str] | None = None) -> dict:
-    """获取单次活动详情。
+    """Get detailed metrics for a single activity by ID.
 
     Args:
-        activity_id: 活动ID
-        fields: 指定返回字段，如 ["splits", "hrZones", "laps", "gps"]
-                默认返回基础摘要
+        activity_id: The Garmin activity ID.
+        fields: Optional list of extra data sections to include.
+                Supported values: "splits", "hrZones", "laps", "gps".
+                Omit to return the basic summary only.
     """
     client = get_client()
     raw = client.get_activity(activity_id)
