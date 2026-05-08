@@ -7,10 +7,10 @@ from garmin_mcp_lite.client import get_client
 def get_hr_trend(
     period: Literal["7d", "30d", "90d"] = "7d",
 ) -> dict:
-    """获取静息心率历史趋势数据。
+    """Get resting heart rate historical trend data.
 
     Args:
-        period: 时间范围
+        period: Time window. One of: "7d" (7 days), "30d" (30 days), "90d" (90 days).
     """
     client = get_client()
 
@@ -22,16 +22,27 @@ def get_hr_trend(
     raw_rows: list[dict] = []
     for i in range(days):
         check_date = (end - timedelta(days=i)).strftime("%Y-%m-%d")
+        rhr = None
         try:
+            # Method 1: via training readiness
             readiness_list = client.get_training_readiness(check_date)
             if isinstance(readiness_list, list) and readiness_list:
                 rhr = readiness_list[0].get("restingHeartRate")
-                if rhr:
-                    raw_rows.append({"date": check_date, "value": int(rhr)})
         except Exception:
             pass
 
-    # 按日期聚合并排序，保证 latest 的语义稳定
+        if not rhr:
+            try:
+                # Method 2: via daily summary (more universal)
+                summary = client.get_user_summary(check_date)
+                rhr = summary.get("restingHeartRate")
+            except Exception:
+                pass
+
+        if rhr:
+            raw_rows.append({"date": check_date, "value": int(rhr)})
+
+    # Aggregate by date and sort to ensure stable 'latest' semantics
     by_date: dict[str, list[int]] = {}
     for row in raw_rows:
         by_date.setdefault(row["date"], []).append(row["value"])
@@ -42,7 +53,7 @@ def get_hr_trend(
     ]
     hr_data.sort(key=lambda x: x["date"], reverse=True)
 
-    # 计算统计
+    # Compute summary statistics
     values = [d["value"] for d in hr_data if d["value"]]
     return {
         "period": period,
@@ -53,5 +64,5 @@ def get_hr_trend(
         "average": round(sum(values) / len(values), 1) if values else None,
         "min": min(values) if values else None,
         "max": max(values) if values else None,
-        "data": hr_data[:10],  # 最近10条
+        "data": hr_data[:10],  # most recent 10 entries
     }
