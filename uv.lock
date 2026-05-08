@@ -320,9 +320,10 @@ wheels = [
 
 [[package]]
 name = "garmin-mcp-lite"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
+    { name = "curl-cffi" },
     { name = "garminconnect", version = "0.3.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "garminconnect", version = "0.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "mcp" },
@@ -343,6 +344,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "curl-cffi", specifier = ">=0.7.0" },
     { name = "garminconnect", specifier = ">=0.2.25" },
     { name = "mcp", specifier = ">=1.6.0" },
     { name = "pydantic", specifier = ">=2.0" },

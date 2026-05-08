@@ -1,10 +1,11 @@
-# Secrets
-.env
-
-# Caches
-.ruff_cache/
 __pycache__/
-*.pyc
-
-# Editor / tooling local state
-.claude/settings.local.json
+*.py[cod]
+*.class
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+.DS_Store
+scratch/
+.env

@@ -1,102 +1,141 @@
 # Garmin MCP Lite
 
+<!-- AI CONTEXT START -->
+> **[For AI Assistants & LLMs]** 
+> You are interfacing with a Garmin MCP (Model Context Protocol) server. 
+> 1. **Data Freshness**: Always query the data if the user asks about their recent workouts or health metrics.
+> 2. **Parameter Tuning**: Use the `fields` parameter in tools like `garmin_activity_detail` to limit the response payload and save context window (e.g., `["splits", "hrZones"]`).
+> 3. **Read-Only**: This server provides read-only access to Garmin Connect. You cannot modify user data.
+> 4. **No Password Request**: Never ask the user for their Garmin password. Authentication is handled out-of-band via a local token.
+> 5. **Health Tip**: `garmin_health` now supports a `metric` parameter — use `"steps"`, `"sleep"`, `"hrv"`, `"spo2"`, `"body_battery"`, etc., to query specific data and save context window.
+<!-- AI CONTEXT END -->
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![PyPI version](https://badge.fury.io/py/garmin-mcp-lite.svg)](https://badge.fury.io/py/garmin-mcp-lite)
 
-精简版 Garmin MCP 服务器，专为耐力运动爱好者设计。
+*Read this in other languages: [English](README.md), [简体中文](README.zh-CN.md).*
 
-## 核心工具（10个替代80+）
+A lightweight Garmin Model Context Protocol (MCP) server, designed specifically for endurance athletes. 
 
-| 工具 | 功能 |
+It exposes **12 precisely-curated endpoints** for deep analysis of running, cycling, swimming, and health data — replacing bulky 80+ endpoint alternatives with a clean, focused toolset.
+
+## Core Tools (12)
+
+### 🏃 Activity & Training
+
+| Tool | Functionality |
 |:---|:---|
-| `garmin_activities` | 查跑步/骑行/游泳/潜水记录，支持日期/类型筛选 |
-| `garmin_activity_detail` | 单次活动详情（配速、心率、分段等） |
-| `garmin_training_plan` | 今日/指定日期训练课表 |
-| `garmin_training_status` | 训练状态、VO2Max、恢复时间、准备度 |
-| `garmin_health` | 睡眠/HRV/压力/身体电量 |
-| `garmin_gear` | 跑鞋/自行车装备库及里程 |
-| `garmin_device` | 设备信息及同步状态 |
-| `garmin_hr_trend` | 近 7/30/90 天静息心率趋势 |
-| `garmin_weekly_stats` | 周/月/年训练总量统计 |
-| `garmin_coach` | Garmin Coach 训练计划概览 |
+| `garmin_activities` | List running/cycling/swimming/diving records with date & type filters. |
+| `garmin_activity_detail` | Get single activity details (pace, heart rate zones, splits, GPS, etc.). |
+| `garmin_training_plan` | Get today's or a specific date's scheduled training workout. |
+| `garmin_training_status` | Get training status, VO2Max, **acute load**, **load focus distribution** (aerobic/anaerobic), recovery time, and training readiness score. |
+| `garmin_weekly_stats` | Get weekly/monthly/yearly training volume statistics. |
+| `garmin_coach` | Overview of current Garmin Coach training plans. |
 
-## 安装
+### 💚 Health & Wellness
+
+| Tool | Functionality |
+|:---|:---|
+| `garmin_health` | Get comprehensive health metrics: sleep quality, HRV status, stress, body battery, **SpO2**, **respiration rate**, **intensity minutes**, **daily steps**, **floors climbed**, and resting heart rate. Supports `metric` parameter for targeted queries. |
+| `garmin_hr_trend` | Get resting heart rate trends for the last 7/30/90 days. |
+
+### 🎯 Goals & Challenges
+
+| Tool | Functionality |
+|:---|:---|
+| `garmin_events` | Get your race calendar: upcoming race dates, target distances, and **goal finish times**. |
+| `garmin_challenges` | Get in-progress challenges: virtual climbs, monthly badge challenges, and their completion percentages. |
+
+### ⌚ Device & Gear
+
+| Tool | Functionality |
+|:---|:---|
+| `garmin_gear` | Get your shoe/bike gear list and their **real cumulative mileage**. |
+| `garmin_device` | Get connected device info: firmware version, **update availability**, primary device status, and registration date. |
+
+## Quickstart (via PyPI & uv)
+
+The easiest way to run this server is using `uvx` (no cloning required).
+
+### 1. Authenticate (First Time Only)
+
+**Why not just put the password in the AI config?**
+Garmin has strict security measures. Logging in from a new location/MCP server often triggers Cloudflare CAPTCHAs or MFA email codes. If the password is in Claude's background config, the AI assistant will silently freeze or fail when challenged, with no way for you to input the code.
+
+Therefore, this plugin uses a secure **two-step strategy**: Run a login script in your terminal first. If challenged, you can interactively input the MFA code. Upon success, a session token is cached locally (valid for ~1 year).
 
 ```bash
-uv sync
+GARMIN_EMAIL="your@email.com" GARMIN_PASSWORD="your_password" uvx --with garmin-mcp-lite garmin-mcp-lite-login
 ```
+*(💡 **China Region Users**: If your account is registered in Garmin China (garmin.cn), prefix the command with `GARMIN_IS_CN=true`.)*
 
-## 配置
+### 2. Configure Your AI Assistant
 
-环境变量：
-```bash
-export GARMIN_EMAIL="your@email.com"
-export GARMIN_PASSWORD="your_password"
-```
+Once authenticated, add the server to your favorite MCP-compatible AI assistant.
 
-首次请先登录并生成本地 token 缓存：
-```bash
-GARMIN_EMAIL="your@email.com" GARMIN_PASSWORD="your_password" \
-python -m garmin_mcp_lite.login
-```
+#### Claude Desktop
 
-之后启动 MCP 服务（自动复用 token）：
-```bash
-python -m garmin_mcp_lite.server
-```
-
-## Hermes 配置
-
-在 `~/.hermes/config.yaml` 中添加：
-
-```yaml
-mcp_servers:
-  garmin-lite:
-    command: uv
-    args:
-      - run
-      - --directory
-      - /path/to/garmin_mcp_lite
-      - python
-      - -m
-      - garmin_mcp_lite.server
-```
-
-## Claude Desktop 配置
-
-在 `~/Library/Application Support/Claude/claude_desktop_config.json` 中添加：
+Add this to your `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "garmin-lite": {
-      "command": "uv",
+      "command": "uvx",
       "args": [
-        "run",
-        "--directory",
-        "/path/to/garmin_mcp_lite",
-        "python",
-        "-m",
-        "garmin_mcp_lite.server"
+        "garmin-mcp-lite"
       ]
     }
   }
 }
 ```
 
-## 与原版对比
+#### Cursor / Windsurf / Gemini CLI / Other MCP Clients
+
+Use the exact same `command` and `args` as above. The server will automatically load the cached token from `~/.garmin-mcp-lite/garmin_tokens.json`.
+
+## Manual Installation (for Developers)
+
+If you want to modify the code:
+
+```bash
+git clone https://github.com/Golden0Voyager/garmin-mcp-lite.git
+cd garmin-mcp-lite
+uv sync
+
+# Login
+GARMIN_EMAIL="your@email.com" GARMIN_PASSWORD="your_password" python -m garmin_mcp_lite.login
+
+# Run server
+python -m garmin_mcp_lite.server
+```
+
+## Example Queries
+
+Once connected, you can ask your AI assistant natural-language questions like:
+
+- *"What's my training load focus this week?"*
+- *"Show me my race goal for June and what my current predicted finish time is."*
+- *"How's my Grossglockner virtual climb challenge going?"*
+- *"Is my Descent G1 firmware up to date?"*
+- *"How many steps have I taken today? Am I on track for my daily goal?"*
+- *"Analyze my sleep quality from last night."*
+
+## Comparison with Other Garmin MCPs
 
 | | Taxuspt/garmin_mcp | garmin_mcp_lite |
 |:---|:---|:---|
-| 工具数量 | 80+ | 10 |
-| 命名风格 | `mcp_garmin_get_activities_by_date` | `garmin_activities` |
-| 聚合查询 | 无 | `fields` 参数控制详情粒度 |
-| 写操作 | 大量（体重/营养/装备） | 仅读（装备/体重由苹果健康同步） |
-| 维护成本 | 依赖上游 | 自主可控 |
+| Tool Count | 80+ | 12 |
+| Naming | `mcp_garmin_get_activities_by_date` | `garmin_activities` |
+| Deep Queries | No | `fields` parameter controls detail granularity |
+| Training Load | Basic | Acute load + load focus distribution |
+| Health Depth | Basic | SpO2, respiration, intensity minutes, steps |
+| Race/Challenge | No | Events calendar + challenge progress |
+| Write Ops | Heavy (weight/nutrition/gear) | Read-only |
 
-## 许可证
+## License
 
 [MIT](LICENSE) © 2026 Haining Yu
 
-本项目基于第三方库 [garminconnect](https://github.com/cyberjunky/python-garminconnect)（MIT）封装，
-非 Garmin 官方产品，使用前请遵守 Garmin Connect 服务条款。
+This project is built on top of the excellent [garminconnect](https://github.com/cyberjunky/python-garminconnect) library. It is not an official Garmin product. Please adhere to Garmin Connect's terms of service when using this tool.
