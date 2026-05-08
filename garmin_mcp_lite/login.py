@@ -1,34 +1,34 @@
 """
-Garmin 交互式登录脚本（一次性跑）
+Garmin interactive login script (run once to cache a session token).
 
-用法：
+Usage:
     GARMIN_EMAIL=your@email.com GARMIN_PASSWORD=xxx python -m garmin_mcp_lite.login
 
-流程：
-1. 从环境变量读 GARMIN_EMAIL / GARMIN_PASSWORD / GARMIN_IS_CN
-2. 尝试登录；若 Garmin 要 MFA 则交互式提示输入验证码
-3. 成功后把 token 存到 ~/.garmin-mcp-lite/garmin_tokens.json
+Steps:
+1. Reads GARMIN_EMAIL / GARMIN_PASSWORD / GARMIN_IS_CN from environment variables.
+2. Attempts login; prompts interactively for an MFA code if Garmin requires it.
+3. Saves the session token to ~/.garmin-mcp-lite/garmin_tokens.json on success.
 
-首次成功后就不用再跑了（token 有效期约 1 年）。
+After a successful first login you don't need to run this again (token is valid ~1 year).
 """
 import os
 import sys
 
 from garminconnect import Garmin, GarminConnectAuthenticationError
 
-TOKEN_DIR = os.path.expanduser("~/.garmin-mcp-lite")
+TOKEN_DIR = os.environ.get("GARMIN_TOKEN_DIR", os.path.expanduser("~/.garmin-mcp-lite"))
 
 
 def main():
     email = os.environ.get("GARMIN_EMAIL")
     password = os.environ.get("GARMIN_PASSWORD")
     if not email or not password:
-        print("❌ 请提供环境变量 GARMIN_EMAIL / GARMIN_PASSWORD")
+        print("❌ Please set the GARMIN_EMAIL and GARMIN_PASSWORD environment variables.")
         sys.exit(1)
 
     is_cn = os.environ.get("GARMIN_IS_CN", "").lower() in ("1", "true", "yes")
     domain_hint = "garmin.cn" if is_cn else "garmin.com"
-    print(f"🔐 尝试登录 Garmin ({domain_hint}): {email}")
+    print(f"🔐 Logging in to Garmin ({domain_hint}): {email}")
 
     os.makedirs(TOKEN_DIR, exist_ok=True)
     client = Garmin(email=email, password=password, is_cn=is_cn)
@@ -36,29 +36,29 @@ def main():
     try:
         client.login(TOKEN_DIR)
     except GarminConnectAuthenticationError as e:
-        print(f"❌ 认证失败：{e}")
-        print("可能原因：账号密码错误 / 账号被临时锁定 / 浏览器登录一次清除人机验证")
+        print(f"❌ Authentication failed: {e}")
+        print("Possible causes: wrong credentials / account temporarily locked / try logging in via browser first to clear CAPTCHA.")
         sys.exit(1)
     except Exception as e:
         msg = str(e)
         if "429" in msg or "rate" in msg.lower():
-            print(f"❌ IP 被 Garmin 限流：{e}")
-            print("建议：")
-            print("  1. 安装 curl_cffi 启用更多登录策略：uv pip install curl-cffi")
-            print("  2. 换手机热点 / 等 6-12 小时")
-            print("  3. 先浏览器登录 https://connect.garmin.com 或 https://connect.garmin.cn")
-            print("  4. 如果账号是中国区，添加 GARMIN_IS_CN=true")
+            print(f"❌ IP rate-limited by Garmin: {e}")
+            print("Suggestions:")
+            print("  1. Install curl_cffi for better login strategies: uv pip install curl-cffi")
+            print("  2. Switch to a mobile hotspot or wait 6-12 hours.")
+            print("  3. Log in via browser first: https://connect.garmin.com or https://connect.garmin.cn")
+            print("  4. If you have a China account, prefix the command with GARMIN_IS_CN=true")
         else:
-            print(f"❌ 登录异常：{e}")
+            print(f"❌ Login error: {e}")
         sys.exit(1)
 
     try:
         full_name = client.get_full_name()
-        print(f"✅ 登录成功：{full_name}")
+        print(f"✅ Login successful: {full_name}")
     except Exception:
-        print("✅ 登录成功")
-    print(f"📁 Token 已保存到 {TOKEN_DIR}/garmin_tokens.json")
-    print("\n后续 MCP 服务器会自动使用此 token，无需再次登录。")
+        print("✅ Login successful")
+    print(f"📁 Token saved to {TOKEN_DIR}/garmin_tokens.json")
+    print("\nThe MCP server will use this token automatically. No need to log in again.")
 
 
 if __name__ == "__main__":

@@ -8,25 +8,22 @@ from garminconnect import (
     GarminConnectTooManyRequestsError,
 )
 
-TOKEN_DIR = Path.home() / ".garmin-mcp-lite"
+# Token directory: read from environment variable, or default to ~/.garmin-mcp-lite
+TOKEN_DIR = Path(os.environ.get("GARMIN_TOKEN_DIR", Path.home() / ".garmin-mcp-lite"))
 TOKEN_FILE = TOKEN_DIR / "garmin_tokens.json"
 
 _client: Garmin | None = None
 
 
 def get_client() -> Garmin:
-    """获取已登录的 Garmin 客户端（单例，token 缓存复用）。
-
-    首次使用请先运行登录脚本生成 token：
-        GARMIN_EMAIL=xxx GARMIN_PASSWORD=yyy python -m garmin_mcp_lite.login
-    """
+    """Return a logged-in Garmin client (singleton, reuses cached token)."""
     global _client
     if _client is not None:
         return _client
 
     if not TOKEN_FILE.exists():
         raise RuntimeError(
-            f"未找到 Garmin token ({TOKEN_FILE})。请先执行登录：\n"
+            f"Garmin token not found ({TOKEN_FILE}). Please run the login script first:\n"
             f"  GARMIN_EMAIL=your@email.com GARMIN_PASSWORD=xxx python -m garmin_mcp_lite.login"
         )
 
@@ -37,13 +34,13 @@ def get_client() -> Garmin:
         client.login(str(TOKEN_DIR))
     except GarminConnectAuthenticationError as e:
         raise RuntimeError(
-            f"Garmin token 失效或认证失败（{e}）。请重新登录：\n"
+            f"Garmin token expired or authentication failed ({e}). Please re-run the login script:\n"
             f"  GARMIN_EMAIL=your@email.com GARMIN_PASSWORD=xxx python -m garmin_mcp_lite.login"
         ) from e
     except GarminConnectTooManyRequestsError as e:
-        raise RuntimeError("Garmin 请求过于频繁，稍后再试") from e
+        raise RuntimeError("Too many requests to Garmin. Please try again later.") from e
     except GarminConnectConnectionError as e:
-        raise RuntimeError(f"Garmin 连接错误：{e}") from e
+        raise RuntimeError(f"Garmin connection error: {e}") from e
 
     _client = client
     return client
