@@ -9,3 +9,6 @@ build/
 .DS_Store
 scratch/
 .env
+# Skill-generated analysis artifacts
+.understand-anything/
+.codegraph/
