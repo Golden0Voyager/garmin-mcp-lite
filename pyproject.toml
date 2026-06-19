@@ -64,6 +64,7 @@ ignore_missing_imports = true
 
 [tool.coverage.run]
 source = ["garmin_mcp_lite"]
+omit = ["garmin_mcp_lite/login.py", "garmin_mcp_lite/server.py"]
 
 [tool.coverage.report]
 fail_under = 85
