@@ -38,7 +38,7 @@ def get_health_data(
             score = sleep.get("sleepScore")
             if score is None and "sleepScores" in sleep:
                 score = sleep["sleepScores"].get("overall", {}).get("value")
-            
+
             result["sleep"] = {
                 "score": score,
                 "duration_min": get_first(sleep, "sleepTimeInMinutes", "sleepTimeSeconds"),
@@ -85,7 +85,7 @@ def get_health_data(
             bb = bb_raw[0] if isinstance(bb_raw, list) and bb_raw else bb_raw
             if not isinstance(bb, dict):
                 bb = {}
-            
+
             # 提取最后电量：从 bodyBatteryValuesArray 或 bodyBatteryValues
             values = get_first(bb, "bodyBatteryValuesArray", "bodyBatteryValues") or []
             last_level = None
