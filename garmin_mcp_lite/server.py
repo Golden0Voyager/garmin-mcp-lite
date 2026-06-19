@@ -2,15 +2,15 @@ from mcp.server.fastmcp import FastMCP
 
 from garmin_mcp_lite.tools import (
     activities,
+    challenges,
     coach,
     device,
+    events,
     gear,
     health,
     hr_trend,
     training,
     weekly_stats,
-    events,
-    challenges,
 )
 
 mcp = FastMCP("garmin-mcp-lite")
