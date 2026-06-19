@@ -1,12 +1,13 @@
-from garmin_mcp_lite.client import get_client
 from datetime import datetime
+
+from garmin_mcp_lite.client import get_client
 
 
 def get_challenges() -> dict:
     """Get in-progress challenges and badge completion status, including virtual challenges and monthly badges."""
     client = get_client()
     now = datetime.now()
-    
+
     result = {
         "virtual_challenges": [],
         "badge_challenges": [],
@@ -19,7 +20,7 @@ def get_challenges() -> dict:
             progress = v.get("badgeProgressValue", 0)
             target = v.get("badgeTargetValue", 0)
             percent = round((progress / target * 100), 1) if target > 0 else 0
-            
+
             result["virtual_challenges"].append({
                 "name": v.get("badgeChallengeName"),
                 "progress": progress,
@@ -38,15 +39,15 @@ def get_challenges() -> dict:
             end_str = b.get("endDate")
             if not (start_str and end_str):
                 continue
-                
+
             start = datetime.fromisoformat(start_str.split("T")[0])
             end = datetime.fromisoformat(end_str.split("T")[0])
-            
+
             # Only include active and joined challenges
             if start <= now <= end and b.get("userJoined"):
                 progress = b.get("badgeProgressValue", 0)
                 target = b.get("badgeTargetValue", 0)
-                
+
                 # Unit conversion (Garmin internally uses meters, seconds, etc.)
                 unit_id = b.get("badgeUnitId")
                 unit_name = "units"
@@ -58,9 +59,9 @@ def get_challenges() -> dict:
                     progress = round(progress / 3600, 1)
                     target = round(target / 3600, 1)
                     unit_name = "hours"
-                
+
                 percent = round((progress / target * 100), 1) if target > 0 else 0
-                
+
                 result["badge_challenges"].append({
                     "name": b.get("badgeChallengeName"),
                     "progress": progress,
