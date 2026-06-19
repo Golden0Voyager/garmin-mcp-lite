@@ -15,7 +15,7 @@ def get_gear_list() -> dict:
     for g in gear:
         uuid = g.get("uuid")
         distance_meters = 0
-        
+
         # 获取该装备的详细统计信息（含累计里程）
         if uuid:
             try:
