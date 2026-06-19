@@ -160,7 +160,7 @@ def get_training_status() -> dict:
     # API response: status["mostRecentTrainingStatus"]["latestTrainingStatusData"]
     # is a dict keyed by device ID. Prefer the entry where primaryTrainingDevice=True,
     # fall back to the first entry.
-    _TRAINING_STATUS_MAP = {
+    _training_status_map = {
         0: "Unknown", 1: "No Status", 2: "Overreaching", 3: "Detraining",
         4: "Maintaining", 5: "Recovery", 6: "Productive", 7: "Peaking",
         8: "Unproductive",
@@ -178,7 +178,7 @@ def get_training_status() -> dict:
             )
             if isinstance(primary, dict):
                 raw_code = primary.get("trainingStatus")
-                training_status_value = _TRAINING_STATUS_MAP.get(raw_code, raw_code)
+                training_status_value = _training_status_map.get(raw_code, raw_code)
                 training_status_phrase = primary.get("trainingStatusFeedbackPhrase")
 
     # ── Parse training load ──────────────────────────────────────────────────
@@ -212,11 +212,11 @@ def get_training_status() -> dict:
     lb_map = lb_data.get("metricsTrainingLoadBalanceDTOMap", {})
     # Find load balance stats for the primary training device
     lb_stats = None
-    for dev_id, stats in lb_map.items():
+    for _dev_id, stats in lb_map.items():
         if isinstance(stats, dict) and stats.get("primaryTrainingDevice"):
             lb_stats = stats
             break
-    
+
     if lb_stats:
         load_focus = {
             "anaerobic": round(lb_stats.get("monthlyLoadAnaerobic", 0)),
