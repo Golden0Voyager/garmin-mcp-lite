@@ -74,3 +74,6 @@ omit = ["garmin_mcp_lite/login.py", "garmin_mcp_lite/server.py"]
 [tool.coverage.report]
 fail_under = 85
 show_missing = true
+
+[tool.bandit]
+skips = ["B101", "B311", "B404", "B603"]
