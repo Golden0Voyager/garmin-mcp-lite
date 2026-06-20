@@ -5,7 +5,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
 _TOOL_MODULES = [
     "garmin_mcp_lite.tools.activities",
     "garmin_mcp_lite.tools.health",
