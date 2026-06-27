@@ -66,6 +66,7 @@ testpaths = ["tests"]
 
 [tool.mypy]
 ignore_missing_imports = true
+files = ["garmin_mcp_lite/"]
 
 [tool.coverage.run]
 source = ["garmin_mcp_lite"]
