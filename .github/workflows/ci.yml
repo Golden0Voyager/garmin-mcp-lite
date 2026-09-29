@@ -48,3 +48,5 @@ jobs:
       # into a throwaway env with no lock and no overrides, then handshakes.
       - name: Smoke test the wheel (lock-free install)
         run: python3 scripts/smoke_wheel_install.py
+        env:
+          SMOKE_DEBUG: "1"
