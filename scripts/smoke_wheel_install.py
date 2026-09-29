@@ -26,6 +26,7 @@ It runs in CI and is safe to run locally:  python3 scripts/smoke_wheel_install.p
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -103,6 +104,10 @@ def handshake(env_python: Path) -> tuple[str, int]:
     payload = "\n".join(json.dumps(m) for m in msgs) + "\n"
     p = subprocess.run([str(env_python), "-m", "garmin_mcp_lite.server"],
                        input=payload, capture_output=True, text=True, timeout=TIMEOUT)
+    if os.environ.get("SMOKE_DEBUG"):
+        print("  [debug] rc:", p.returncode)
+        print("  [debug] stdout:", repr((p.stdout or "")[:800]))
+        print("  [debug] stderr:", repr((p.stderr or "")[:400]))
 
     server_name, n_tools = "", 0
     for line in (p.stdout or "").splitlines():
