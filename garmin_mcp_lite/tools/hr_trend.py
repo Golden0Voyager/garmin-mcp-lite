@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Literal
+from typing import Any, Literal
 
 from garmin_mcp_lite.client import get_client
 
@@ -47,7 +47,9 @@ def get_hr_trend(
     for row in raw_rows:
         by_date.setdefault(row["date"], []).append(row["value"])
 
-    hr_data = [
+    # Annotated: without it mypy infers list[dict[str, object]] (the join of the str
+    # date and the rounded float), which breaks the sort key, sum(), min() and max().
+    hr_data: list[dict[str, Any]] = [
         {"date": date, "value": round(sum(values) / len(values), 1)}
         for date, values in by_date.items()
     ]
