@@ -178,7 +178,9 @@ def get_training_status() -> dict:
             )
             if isinstance(primary, dict):
                 raw_code = primary.get("trainingStatus")
-                training_status_value = _training_status_map.get(raw_code, raw_code)
+                # _training_status_map is keyed by int; non-int codes fall through to the
+                # raw value exactly as the untyped .get(code, code) default always did.
+                training_status_value = _training_status_map.get(raw_code, raw_code) if isinstance(raw_code, int) else raw_code
                 training_status_phrase = primary.get("trainingStatusFeedbackPhrase")
 
     # ── Parse training load ──────────────────────────────────────────────────
@@ -249,8 +251,8 @@ def get_training_status() -> dict:
         "load_focus": load_focus,
         "load": load_value,
         "recovery_time_h": (
-            round(readiness.get("recoveryTime") / 60, 1)
-            if isinstance(readiness, dict) and readiness.get("recoveryTime") is not None
+            round(readiness["recoveryTime"] / 60, 1)
+            if isinstance(readiness, dict) and isinstance(readiness.get("recoveryTime"), (int, float))
             else None
         ),
         "recovery_time_updated_at": (
