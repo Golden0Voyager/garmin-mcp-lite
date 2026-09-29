@@ -8,7 +8,7 @@ def get_challenges() -> dict:
     client = get_client()
     now = datetime.now()
 
-    result = {
+    result: dict[str, list[dict]] = {
         "virtual_challenges": [],
         "badge_challenges": [],
     }
