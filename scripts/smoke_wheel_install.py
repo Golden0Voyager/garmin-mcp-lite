@@ -92,8 +92,14 @@ def version_tuple(v: str) -> tuple[int, ...]:
     return tuple(int(x) for x in re.findall(r"\d+", v)[:3]) or (0,)
 
 
-def handshake(env_python: Path) -> tuple[str, int]:
-    """Drive the installed server over stdio: initialize, initialized, tools/list."""
+def handshake(env_python: Path, attempts: int = 3) -> tuple[str, int]:
+    """Drive the installed server over stdio: initialize, initialized, tools/list.
+
+    Retries: the server writes its two responses as stdin reaches EOF, so on a
+    cold CI runner the process can be torn down after answering `initialize` but
+    before `tools/list` has been flushed. Retrying makes the check deterministic
+    instead of intermittently reporting zero tools.
+    """
     msgs = [
         {"jsonrpc": "2.0", "id": 1, "method": "initialize",
          "params": {"protocolVersion": "2024-11-05", "capabilities": {},
@@ -102,29 +108,38 @@ def handshake(env_python: Path) -> tuple[str, int]:
         {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
     ]
     payload = "\n".join(json.dumps(m) for m in msgs) + "\n"
-    p = subprocess.run([str(env_python), "-m", "garmin_mcp_lite.server"],
-                       input=payload, capture_output=True, text=True, timeout=TIMEOUT)
-    if os.environ.get("SMOKE_DEBUG"):
-        print("  [debug] rc:", p.returncode)
-        print("  [debug] stdout:", repr((p.stdout or "")[:800]))
-        print("  [debug] stderr:", repr((p.stderr or "")[:400]))
+    last = ("", 0, "")
 
-    server_name, n_tools = "", 0
-    for line in (p.stdout or "").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            msg = json.loads(line)
-        except ValueError:
-            continue
-        result = msg.get("result")
-        if msg.get("id") == 1 and isinstance(result, dict):
-            info = result.get("serverInfo")
-            server_name = info.get("name", "") if isinstance(info, dict) else ""
-        elif msg.get("id") == 2 and isinstance(result, dict):
-            n_tools = len(result.get("tools") or [])
-    return server_name, n_tools
+    for attempt in range(1, attempts + 1):
+        p = subprocess.run([str(env_python), "-m", "garmin_mcp_lite.server"],
+                           input=payload, capture_output=True, text=True, timeout=TIMEOUT)
+        server_name, n_tools = "", 0
+        for line in (p.stdout or "").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                msg = json.loads(line)
+            except ValueError:
+                continue
+            result = msg.get("result")
+            if msg.get("id") == 1 and isinstance(result, dict):
+                info = result.get("serverInfo")
+                server_name = info.get("name", "") if isinstance(info, dict) else ""
+            elif msg.get("id") == 2 and isinstance(result, dict):
+                n_tools = len(result.get("tools") or [])
+        last = (server_name, n_tools, p.stderr or "")
+        if server_name and n_tools >= 1:
+            if os.environ.get("SMOKE_DEBUG") and attempt > 1:
+                print(f"  [debug] handshake succeeded on attempt {attempt}")
+            return server_name, n_tools
+        if os.environ.get("SMOKE_DEBUG"):
+            print(f"  [debug] attempt {attempt}: rc={p.returncode} name={server_name!r} "
+                  f"tools={n_tools}")
+            print("  [debug] stdout:", repr((p.stdout or "")[:400]))
+            print("  [debug] stderr:", repr((p.stderr or "")[:300]))
+
+    return last[0], last[1]
 
 
 def main() -> None:
