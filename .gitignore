@@ -13,6 +13,9 @@ scratch/
 .understand-anything/
 .codegraph/
 
+# Worktrees (per-container AGENTS.md isolation rule)
+.worktrees/
+
 # Test coverage cache
 .ruff_cache/
 .mypy_cache/
