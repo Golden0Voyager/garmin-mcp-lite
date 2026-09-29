@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -10,13 +11,21 @@ def edge_client() -> MagicMock:
     """Mock client with edge-case return values for uncovered branches."""
     fake = MagicMock()
 
-    # For challenges with time-based unit (unit_id=7)
+    # For challenges with time-based unit (unit_id=7).
+    # challenges.get_challenges() keeps a badge challenge only when
+    # `start <= now <= end`, so this window is anchored to the current date.
+    # Hardcoding absolute dates made the fixture expire on 2026-06-30 and
+    # silently fail every run after it.
+    today = datetime.now().date()
+    challenge_start = (today - timedelta(days=10)).isoformat()
+    challenge_end = (today + timedelta(days=10)).isoformat()
+
     fake.get_inprogress_virtual_challenges.return_value = []
     fake.get_badge_challenges.return_value = [
         {
             "badgeChallengeName": "Time Challenge",
-            "startDate": "2026-06-01T00:00:00",
-            "endDate": "2026-06-30T00:00:00",
+            "startDate": f"{challenge_start}T00:00:00",
+            "endDate": f"{challenge_end}T00:00:00",
             "badgeProgressValue": 3600,
             "badgeTargetValue": 7200,
             "badgeUnitId": 7,
