@@ -27,7 +27,7 @@ jobs:
         run: uv run ruff check garmin_mcp_lite/ tests/
 
       - name: Run mypy
-        run: uv run mypy garmin_mcp_lite/ || true
+        run: uv run mypy garmin_mcp_lite/
       - name: Run security scan (bandit)
         run: uv tool run bandit -r garmin_mcp_lite/ || true
 

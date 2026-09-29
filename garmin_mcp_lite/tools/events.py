@@ -11,9 +11,9 @@ def get_events() -> dict:
     except Exception as e:
         return {"error": str(e)}
 
-    result = []
-    for e in events:
-        custom = e.get("eventCustomization", {})
+    result: list[dict] = []
+    for event in events:
+        custom = event.get("eventCustomization", {})
         goal = custom.get("customGoal", {})
 
         # Convert goal finish time from seconds to H:MM:SS
@@ -26,10 +26,10 @@ def get_events() -> dict:
             goal_time_str = f"{h:d}:{m:02d}:{s:02d}"
 
         result.append({
-            "name": e.get("eventName"),
-            "date": e.get("date"),
-            "type": e.get("eventType"),
-            "distance_km": e.get("completionTarget", {}).get("value"),
+            "name": event.get("eventName"),
+            "date": event.get("date"),
+            "type": event.get("eventType"),
+            "distance_km": event.get("completionTarget", {}).get("value"),
             "goal_time": goal_time_str,
             "is_primary": custom.get("isPrimaryEvent", False),
             "training_plan_id": custom.get("trainingPlanId"),

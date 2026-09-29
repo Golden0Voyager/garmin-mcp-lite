@@ -24,10 +24,13 @@ def get_weekly_stats(
         end.strftime("%Y-%m-%d"),
     ) or []
 
-    total_distance_km = 0
-    total_duration_min = 0
+    # Annotated as float: the loop divides metres/seconds by 1000/60, so these
+    # accumulators are not ints despite starting at 0. activity_counts needs a
+    # parameter type because it starts as an empty dict literal.
+    total_distance_km = 0.0
+    total_duration_min = 0.0
     total_calories = 0
-    activity_counts = {}
+    activity_counts: dict[str, int] = {}
 
     for act in activities:
         distance_m = act.get("distance") or 0
