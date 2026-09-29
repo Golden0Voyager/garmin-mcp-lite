@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 from garmin_mcp_lite.client import get_client
 from garmin_mcp_lite.tools._common import get_first, today_str
@@ -27,7 +27,9 @@ def get_health_data(
     if not date:
         date = today_str()
 
-    result = {"date": date}
+    # Annotated: the initial {"date": str} alone would infer dict[str, str], but every
+    # branch below assigns a nested dict, so mypy rejects the whole function without this.
+    result: dict[str, Any] = {"date": date}
 
     if metric in ("sleep", "all"):
         try:
