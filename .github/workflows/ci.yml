@@ -31,8 +31,28 @@ jobs:
       - name: Run security scan (bandit)
         run: uv tool run bandit -r garmin_mcp_lite/ || true
 
-      - name: Run dependency audit
-        run: uv audit || true
+      - name: Audit dependencies
+        # The old step ran `uv audit` for real (uv >= 0.11) but `|| true` turned
+        # every advisory into a green build. This gate reads the frozen lock, so
+        # CI cannot disagree with uv.lock.
+        run: |
+          uv export --frozen --no-emit-project --format requirements-txt --no-hashes > "$RUNNER_TEMP/requirements.txt"
+          uvx pip-audit@2.10.1 --disable-pip --no-deps -r "$RUNNER_TEMP/requirements.txt" --progress-spinner off \
+            --ignore-vuln PYSEC-2026-3467
+        # PYSEC-2026-3467 (garminconnect: insecure permission assignment on the
+        # OAuth token store) is fixed in 0.3.5, and 0.3.5 is not adoptable yet:
+        # every release from 0.3.5 on requires Python >= 3.12, which this project
+        # cannot require (it still supports 3.11, whose lock split is pinned to
+        # 0.3.2 regardless), and it ships `py.typed` with annotations that
+        # disagree with how three tool modules use the client — adopting it turns
+        # this repo's hard mypy gate red with 23 errors. Doing that migration
+        # needs a live Garmin account to confirm the real return shapes, so it is
+        # deliberately out of scope for a CI-gate PR.
+        # Impact while pinned: the advisory is local — the token file is written
+        # with permissions wider than intended. There is no remote attack surface
+        # and no code path here exposes the token store. Revisit when the
+        # garminconnect 0.3.5+ migration lands (tracked as a follow-up), or when
+        # 3.11 support is dropped.
 
 
       - name: Run tests with coverage
