@@ -1,7 +1,7 @@
 from typing import Any, Literal
 
 from garmin_mcp_lite.client import get_client
-from garmin_mcp_lite.tools._common import get_first, today_str
+from garmin_mcp_lite.tools._common import as_dict, get_first, today_str
 
 
 def get_health_data(
@@ -35,11 +35,11 @@ def get_health_data(
         try:
             sleep_raw = client.get_sleep_data(date)
             # 数据在 dailySleepDTO 子对象中
-            sleep = sleep_raw.get("dailySleepDTO", {}) if isinstance(sleep_raw, dict) else {}
+            sleep = as_dict(as_dict(sleep_raw).get("dailySleepDTO"))
             # 睡眠分数可能在 sleepScore 或 sleepScores.overall.value 中
             score = sleep.get("sleepScore")
             if score is None and "sleepScores" in sleep:
-                score = sleep["sleepScores"].get("overall", {}).get("value")
+                score = as_dict(as_dict(sleep["sleepScores"]).get("overall")).get("value")
 
             result["sleep"] = {
                 "score": score,
@@ -60,7 +60,7 @@ def get_health_data(
         try:
             hrv_raw = client.get_hrv_data(date)
             # HRV 数据通常在 hrvSummary 中
-            hrv = hrv_raw.get("hrvSummary", {}) if isinstance(hrv_raw, dict) else {}
+            hrv = as_dict(as_dict(hrv_raw).get("hrvSummary"))
             result["hrv"] = {
                 "weekly_avg": get_first(hrv, "weeklyAvg", "weekly_avg"),
                 "last_night_avg": get_first(hrv, "lastNightAvg", "last_night"),
@@ -142,7 +142,7 @@ def get_health_data(
     if metric == "all":
         try:
             profile = client.get_user_profile()
-            result["vo2max"] = profile.get("userData", {}).get("vo2MaxRunning")
+            result["vo2max"] = as_dict(profile.get("userData")).get("vo2MaxRunning")
         except Exception:
             pass
 

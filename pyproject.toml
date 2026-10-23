@@ -75,10 +75,16 @@ files = ["garmin_mcp_lite/"]
 
 [tool.coverage.run]
 source = ["garmin_mcp_lite"]
-omit = ["garmin_mcp_lite/login.py", "garmin_mcp_lite/server.py"]
+# login.py is an interactive one-shot script (reads a password from the terminal)
+# and cannot be exercised in CI. server.py used to be omitted too, but that left
+# the 15 tool registrations — the only place a tool's public name is defined —
+# with no test coverage at all, so it is measured now (see tests/test_server.py).
+omit = ["garmin_mcp_lite/login.py"]
 
 [tool.coverage.report]
-fail_under = 85
+# Ratcheted from 85 after the suite reached 100%: the 5-point gap is headroom for
+# an awkward branch, not a licence to drop a whole module's tests.
+fail_under = 95
 show_missing = true
 
 [tool.bandit]

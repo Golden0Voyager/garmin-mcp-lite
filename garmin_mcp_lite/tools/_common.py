@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from typing import Any
 
 
 def today_str() -> str:
@@ -9,6 +10,22 @@ def today_str() -> str:
 
 def days_ago_str(days: int) -> str:
     return (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d")
+
+
+def as_dict(value: Any) -> dict[str, Any]:
+    """Return `value` when it is a dict, otherwise an empty dict.
+
+    Garmin routinely sends an explicit `null` where a nested object is
+    documented (e.g. `eventCustomization.customGoal` on an event without a goal),
+    so `payload.get("key", {})` is not enough: the key exists, its value is None,
+    and the next `.get()` raises AttributeError.
+    """
+    return value if isinstance(value, dict) else {}
+
+
+def as_list(value: Any) -> list[Any]:
+    """Return `value` when it is a list, otherwise an empty list."""
+    return value if isinstance(value, list) else []
 
 
 def get_first(d: dict | None, *keys: str):

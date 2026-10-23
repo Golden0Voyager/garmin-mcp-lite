@@ -5,6 +5,12 @@ from garmin_mcp_lite.tools._common import format_pace
 
 _ZONE_LABELS = {1: "recovery", 2: "aerobic", 3: "tempo", 4: "threshold", 5: "anaerobic"}
 
+# garminconnect only grew `Garmin.get_heart_rate_zones()` recently (it is absent
+# in 0.3.3, which this project still supports). The raw endpoint is stable
+# across versions and returns the same per-sport zone floors, so call it
+# directly rather than depend on a method that may not exist.
+_ZONES_ENDPOINT = "/biometric-service/heartRateZones"
+
 _SPORT_KEYS = {
     "running": "RUNNING",
     "cycling": "CYCLING",
@@ -21,7 +27,10 @@ def _zone_ranges(entry: dict) -> list[dict[str, Any]]:
     for index, floor in enumerate(floors, start=1):
         if not isinstance(floor, (int, float)):
             continue
-        next_floor = floors[index] if index < 5 else None
+        # Skip over missing floors when closing this zone: taking the immediate
+        # next index would make a zone straddle the gap and swallow every zone
+        # above it (e.g. a missing zone3Floor pushed zone 2 up to max HR).
+        next_floor = next((f for f in floors[index:] if isinstance(f, (int, float))), None)
         upper = next_floor - 1 if isinstance(next_floor, (int, float)) else max_hr
         ranges.append({
             "zone": index,
@@ -49,7 +58,7 @@ def get_zones(
     sport_key = _SPORT_KEYS[sport]
 
     try:
-        all_zones = client.get_heart_rate_zones()
+        all_zones = client.connectapi(_ZONES_ENDPOINT)
     except Exception as e:
         return {"error": str(e)}
 

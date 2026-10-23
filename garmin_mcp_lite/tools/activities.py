@@ -3,6 +3,7 @@ from typing import Literal
 from garmin_mcp_lite.client import get_client
 from garmin_mcp_lite.tools._common import (
     activity_type_key,
+    as_dict,
     days_ago_str,
     summarize_activity,
     today_str,
@@ -75,10 +76,10 @@ def get_activity_detail(activity_id: int, fields: list[str] | None = None) -> di
     raw = client.get_activity(activity_id)
 
     # get_activity 返回的数据在 summaryDTO 子对象中
-    activity = raw.get("summaryDTO", {})
+    activity = as_dict(raw.get("summaryDTO"))
     activity["activityName"] = raw.get("activityName")
     activity["activityType"] = raw.get("activityTypeDTO")
-    activity["startTimeLocal"] = raw.get("metadataDTO", {}).get("startTimeLocal")
+    activity["startTimeLocal"] = as_dict(raw.get("metadataDTO")).get("startTimeLocal")
 
     result = summarize_activity(activity, activity_id=activity_id)
     result.update(

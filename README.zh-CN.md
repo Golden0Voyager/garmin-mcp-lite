@@ -220,8 +220,18 @@ python -m garmin_mcp_lite.server
 ```bash
 uv run ruff check garmin_mcp_lite/ tests/ scripts/
 uv run mypy garmin_mcp_lite/
-uv run pytest --cov -k 'not test_get_client' tests/
+uv run pytest --cov tests/
 python3 scripts/smoke_wheel_install.py
+```
+
+当前语句覆盖率 100%，包含 `server.py` 里的 15 个工具注册表。
+`tests/test_server.py` 把工具名逐个钉死了，改名或漏注册会直接测试失败，
+而不是悄悄从客户端的 `tools/list` 里消失。
+
+另有一个跑真实账号的端到端脚本，会把 15 个工具全部走一遍（需要先登录）：
+
+```bash
+python test_e2e.py
 ```
 
 ## 与原版对比
@@ -240,7 +250,24 @@ python3 scripts/smoke_wheel_install.py
 ## 变更记录
 
 ### 0.1.6
-- 仅重新打包：0.1.5 的 sdist 误打包了一个本地笔记文件，代码无改动。
+- 修复：`garmin_events` 在遇到没有自定义目标的赛事时报
+  `'NoneType' object has no attribute 'get'` —— Garmin 返回的是
+  `customGoal: null` 而不是省略这个 key，所以 `.get(key, {})` 的默认值永远不生效。
+  真实日历里绝大多数赛事都是这种形状。
+- 修复：`garmin_zones` 报 `'Garmin' object has no attribute
+  'get_heart_rate_zones'`。该方法在 `garminconnect` 0.3.3（仍在支持范围内）里不存在；
+  改为直接读 `/biometric-service/heartRateZones`，各版本通用。
+- 修复：中间某个心率区间下限缺失时，下面的区间会一路延伸到最大心率，
+  和上面所有区间重叠。
+- 修复：Garmin 以 `null` 返回的嵌套对象（`summaryDTO`、`metadataDTO`、
+  `dailySleepDTO`、`sleepScores`、`hrvSummary`、`userData`、`workoutSteps`、
+  `acuteTrainingLoadDTO`、训练负荷平衡表）统一转成空容器，不再抛异常。
+- 测试：语句覆盖率 90% → 100%（171 个用例）。`server.py` 不再从统计中排除，
+  15 个工具注册表真正被断言。
+- 测试：`tests/test_client.py` 不再 reload 客户端模块，所以 CI 里
+  `-k 'not test_get_client'` 这个过滤条件被去掉了。
+- 测试：`test_e2e.py` 覆盖全部 15 个工具（原来 9 个），单个工具失败不再中断后续检查。
+- 重新打包：0.1.5 的 sdist 误打包了一个本地笔记文件。
 
 ### 0.1.5
 - 新增 `garmin_race_prediction`：5K/10K/半马/全马成绩预测，支持 90 天与 1 年趋势。

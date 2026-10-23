@@ -221,8 +221,20 @@ Run the same gates CI runs before opening a PR:
 ```bash
 uv run ruff check garmin_mcp_lite/ tests/ scripts/
 uv run mypy garmin_mcp_lite/
-uv run pytest --cov -k 'not test_get_client' tests/
+uv run pytest --cov tests/
 python3 scripts/smoke_wheel_install.py
+```
+
+The suite is at 100% statement coverage across every module, including the
+15-tool registry in `server.py`. `tests/test_server.py` pins the exact tool
+names, so a rename or a dropped `add_tool()` call fails a test instead of
+silently disappearing from a client's `tools/list`.
+
+There is also a live end-to-end script that walks all 15 tools against your own
+account (needs a login token):
+
+```bash
+python test_e2e.py
 ```
 
 ## Comparison with Other Garmin MCPs
@@ -243,7 +255,26 @@ python3 scripts/smoke_wheel_install.py
 ## Changelog
 
 ### 0.1.6
-- Repackage only: the 0.1.5 sdist accidentally shipped a local notes file. No code changes.
+- Fix: `garmin_events` crashed with `'NoneType' object has no attribute 'get'` on any
+  event without a custom goal — Garmin sends `customGoal: null` rather than omitting
+  the key, so `.get(key, {})` never applied. Affected most real calendars.
+- Fix: `garmin_zones` crashed with `'Garmin' object has no attribute
+  'get_heart_rate_zones'`. That method is absent in `garminconnect` 0.3.3 (still
+  within the supported range); the tool now reads
+  `/biometric-service/heartRateZones` directly, which is stable across versions.
+- Fix: a missing intermediate zone floor no longer makes the zone below it extend
+  all the way to max HR and overlap every zone above it.
+- Fix: nested payloads that Garmin sends as `null` (`summaryDTO`, `metadataDTO`,
+  `dailySleepDTO`, `sleepScores`, `hrvSummary`, `userData`, `workoutSteps`,
+  `acuteTrainingLoadDTO`, training load balance map) are now coerced to empty
+  containers instead of raising.
+- Test: statement coverage 90% → 100% (171 tests). `server.py` is measured now
+  instead of omitted, so the 15 tool registrations are actually asserted.
+- Test: `tests/test_client.py` no longer reloads the client module, which is why
+  CI had to skip it with `-k 'not test_get_client'`; that filter is gone.
+- Test: `test_e2e.py` covers all 15 tools (was 9) and keeps going after a failure
+  so one broken tool does not hide the rest.
+- Repackage: the 0.1.5 sdist accidentally shipped a local notes file.
 
 ### 0.1.5
 - New: `garmin_race_prediction` — predicted 5K/10K/half/marathon times, with 90-day and 1-year trends.

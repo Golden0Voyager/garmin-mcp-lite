@@ -5,6 +5,8 @@ from __future__ import annotations
 from garmin_mcp_lite.tools._common import (
     activity_local_date,
     activity_type_key,
+    as_dict,
+    as_list,
     days_ago_str,
     format_duration,
     format_pace,
@@ -13,6 +15,32 @@ from garmin_mcp_lite.tools._common import (
     summarize_activity,
     today_str,
 )
+
+
+class TestAsDict:
+    def test_passes_a_dict_through(self) -> None:
+        assert as_dict({"a": 1}) == {"a": 1}
+
+    def test_turns_none_into_an_empty_dict(self) -> None:
+        # This is the case `payload.get("key", {})` gets wrong: Garmin sends an
+        # explicit null, so the default never applies.
+        assert as_dict(None) == {}
+
+    def test_turns_other_types_into_an_empty_dict(self) -> None:
+        assert as_dict([1, 2]) == {}
+        assert as_dict("text") == {}
+
+
+class TestAsList:
+    def test_passes_a_list_through(self) -> None:
+        assert as_list([1, 2]) == [1, 2]
+
+    def test_turns_none_into_an_empty_list(self) -> None:
+        assert as_list(None) == []
+
+    def test_turns_other_types_into_an_empty_list(self) -> None:
+        assert as_list({"a": 1}) == []
+
 
 
 class TestTodayStr:

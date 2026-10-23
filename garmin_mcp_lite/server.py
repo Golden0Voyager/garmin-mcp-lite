@@ -53,5 +53,6 @@ mcp.add_tool(zones.get_zones, name="garmin_zones")
 def main():
     mcp.run()
 
+
 if __name__ == "__main__":
-    main()
+    main()  # pragma: no cover - only reached when run as a script

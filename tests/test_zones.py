@@ -1,8 +1,26 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from garmin_mcp_lite.tools.zones import get_zones
+
+
+class TestZonesClientCompatibility:
+    def test_does_not_require_get_heart_rate_zones(self) -> None:
+        # garminconnect 0.3.3 (still within the supported range) has no
+        # Garmin.get_heart_rate_zones(), so the tool has to read the raw
+        # endpoint. A spec'd mock fails loudly if that helper is called again.
+        client = MagicMock(spec=["connectapi", "get_lactate_threshold"])
+        client.connectapi.return_value = [
+            {"zone1Floor": 130, "zone2Floor": 141, "maxHeartRateUsed": 198, "sport": "RUNNING"}
+        ]
+        client.get_lactate_threshold.return_value = {}
+
+        with patch("garmin_mcp_lite.tools.zones.get_client", return_value=client):
+            result = get_zones()
+
+        client.connectapi.assert_called_once_with("/biometric-service/heartRateZones")
+        assert result["hr_zones"]["zones"]
 
 
 class TestZonesRunning:
@@ -50,7 +68,7 @@ class TestZonesMissingConfig:
 
 class TestZonesErrors:
     def test_returns_error_dict(self, mock_get_client: MagicMock) -> None:
-        mock_get_client.get_heart_rate_zones.side_effect = Exception("boom")
+        mock_get_client.connectapi.side_effect = Exception("boom")
         assert get_zones()["error"] == "boom"
 
     def test_threshold_failure_does_not_break_zones(self, mock_get_client: MagicMock) -> None:
@@ -58,3 +76,45 @@ class TestZonesErrors:
         result = get_zones()
         assert result["hr_zones"]["zones"]
         assert result["lactate_threshold"]["error"] == "boom"
+
+    def test_ftp_failure_does_not_break_zones(self, mock_get_client: MagicMock) -> None:
+        mock_get_client.get_cycling_ftp.side_effect = Exception("boom")
+        result = get_zones(sport="cycling")
+        assert result["hr_zones"]["zones"]
+        assert result["ftp"]["error"] == "boom"
+
+
+class TestZonesPartialConfig:
+    def test_missing_zone_floor_is_skipped(self, mock_get_client: MagicMock) -> None:
+        # A half-configured zone set must not produce a bogus 0 bpm band.
+        mock_get_client.connectapi.side_effect = None
+        mock_get_client.connectapi.return_value = [
+            {
+                "trainingMethod": "HR_MAX",
+                "zone1Floor": 120,
+                "zone2Floor": 140,
+                # zone3Floor missing
+                "zone4Floor": 170,
+                "zone5Floor": 185,
+                "maxHeartRateUsed": 195,
+                "sport": "RUNNING",
+            }
+        ]
+        zones = get_zones()["hr_zones"]["zones"]
+
+        assert [z["zone"] for z in zones] == [1, 2, 4, 5]
+        # Zone 2 must close at the next *present* floor (zone 4), not at max HR.
+        assert zones[1] == {"zone": 2, "label": "aerobic", "min": 140, "max": 169}
+        assert zones[3] == {"zone": 5, "label": "anaerobic", "min": 185, "max": 195}
+
+    def test_missing_max_hr_leaves_the_top_zone_open(self, mock_get_client: MagicMock) -> None:
+        mock_get_client.connectapi.side_effect = None
+        mock_get_client.connectapi.return_value = [
+            {"zone1Floor": 120, "zone2Floor": 140, "sport": "RUNNING"}
+        ]
+        zones = get_zones()["hr_zones"]["zones"]
+
+        assert zones == [
+            {"zone": 1, "label": "recovery", "min": 120, "max": 139},
+            {"zone": 2, "label": "aerobic", "min": 140, "max": None},
+        ]

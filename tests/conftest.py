@@ -120,7 +120,25 @@ def _build_fake() -> MagicMock:
     # -- events --
     def _fake_connectapi(path: str) -> list:
         if path == "/calendar-service/events":
-            return [{"eventName": "Tokyo Marathon", "date": "2027-03-07", "eventType": "running", "completionTarget": {"value": 42.195}, "eventCustomization": {"isPrimaryEvent": True, "customGoal": {"unitType": "time", "value": 14400}, "trainingPlanId": "plan_marathon"}}]
+            return [
+                {
+                    "eventName": "Tokyo Marathon", "date": "2027-03-07", "eventType": "running",
+                    "completionTarget": {"value": 42.195},
+                    "eventCustomization": {"isPrimaryEvent": True, "customGoal": {"unitType": "time", "value": 14400}, "trainingPlanId": "plan_marathon"},
+                },
+                {
+                    # Real shape for an event with no custom goal: both nested
+                    # objects are explicit nulls, not absent keys.
+                    "eventName": "Local 10K", "date": "2026-11-01", "eventType": "running",
+                    "completionTarget": None,
+                    "eventCustomization": {"isPrimaryEvent": False, "customGoal": None, "trainingPlanId": None},
+                },
+            ]
+        if path == "/biometric-service/heartRateZones":
+            return [
+                {"trainingMethod": "HR_RESERVE", "restingHeartRateUsed": 43, "lactateThresholdHeartRateUsed": 166, "zone1Floor": 130, "zone2Floor": 141, "zone3Floor": 155, "zone4Floor": 172, "zone5Floor": 183, "maxHeartRateUsed": 198, "sport": "RUNNING"},
+                {"trainingMethod": "HR_MAX", "restingHeartRateUsed": 43, "lactateThresholdHeartRateUsed": 160, "zone1Floor": 94, "zone2Floor": 113, "zone3Floor": 132, "zone4Floor": 150, "zone5Floor": 169, "maxHeartRateUsed": 188, "sport": "CYCLING"},
+            ]
         return []
 
     fake.connectapi.side_effect = _fake_connectapi
@@ -157,10 +175,9 @@ def _build_fake() -> MagicMock:
     ]
 
     # -- zones / thresholds --
-    fake.get_heart_rate_zones.return_value = [
-        {"trainingMethod": "HR_RESERVE", "restingHeartRateUsed": 43, "lactateThresholdHeartRateUsed": 166, "zone1Floor": 130, "zone2Floor": 141, "zone3Floor": 155, "zone4Floor": 172, "zone5Floor": 183, "maxHeartRateUsed": 198, "sport": "RUNNING"},
-        {"trainingMethod": "HR_MAX", "restingHeartRateUsed": 43, "lactateThresholdHeartRateUsed": 160, "zone1Floor": 94, "zone2Floor": 113, "zone3Floor": 132, "zone4Floor": 150, "zone5Floor": 169, "maxHeartRateUsed": 188, "sport": "CYCLING"},
-    ]
+    # The zone payload is served by connectapi() above, because
+    # Garmin.get_heart_rate_zones() does not exist on every supported
+    # garminconnect version (it is missing in 0.3.3).
     fake.get_lactate_threshold.return_value = {
         "speed_and_heart_rate": {"speed": None, "heartRate": 166},
         "power": {"functionalThresholdPower": 404, "isStale": True},

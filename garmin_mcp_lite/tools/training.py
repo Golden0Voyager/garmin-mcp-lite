@@ -3,6 +3,8 @@ from datetime import datetime, timedelta
 from garmin_mcp_lite.client import get_client
 from garmin_mcp_lite.tools._common import (
     activity_local_date,
+    as_dict,
+    as_list,
     get_first,
     today_str,
 )
@@ -211,7 +213,7 @@ def get_training_status() -> dict:
     # Load Focus (Training Load Balance)
     load_focus = {}
     lb_data = load_raw if isinstance(load_raw, dict) else {}
-    lb_map = lb_data.get("metricsTrainingLoadBalanceDTOMap", {})
+    lb_map = as_dict(lb_data.get("metricsTrainingLoadBalanceDTOMap"))
     # Find load balance stats for the primary training device
     lb_stats = None
     for _dev_id, stats in lb_map.items():
@@ -238,7 +240,7 @@ def get_training_status() -> dict:
             next(iter(device_map.values()), None),
         )
         if isinstance(primary_dev, dict):
-            acute_dto = primary_dev.get("acuteTrainingLoadDTO", {})
+            acute_dto = as_dict(primary_dev.get("acuteTrainingLoadDTO"))
             acute_load = acute_dto.get("dailyTrainingLoadAcute")
             acwr_status = acute_dto.get("acwrStatus")
 
@@ -280,10 +282,10 @@ def get_training_status() -> dict:
 
 def _extract_target(workout: dict) -> dict:
     """Extract pace/heart-rate zone targets from a workout structure."""
-    steps = workout.get("workoutSteps", [])
+    steps = as_list(workout.get("workoutSteps"))
     targets = []
     for step in steps:
-        target = step.get("targetType", {})
+        target = as_dict(step.get("targetType"))
         if target:
             targets.append({
                 "step": step.get("stepOrder"),

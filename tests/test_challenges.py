@@ -7,7 +7,7 @@ from garmin_mcp_lite.tools.challenges import get_challenges
 
 # These are live smoke tests: they call the real Garmin API with the logged-in
 # account, so they only mean anything when a token is present. CI has none and
-# skips them (same rationale as the `-k 'not test_get_client'` filter in ci.yml).
+# skips them.
 needs_garmin_token = pytest.mark.skipif(
     not TOKEN_FILE.exists(),
     reason=f"needs a logged-in Garmin account ({TOKEN_FILE}); run garmin-mcp-lite-login",

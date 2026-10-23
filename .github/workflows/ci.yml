@@ -58,7 +58,10 @@ jobs:
 
 
       - name: Run tests with coverage
-        run: uv run pytest --cov --cov-report=term-missing -k 'not test_get_client' tests/
+        # No `-k` filter: tests/test_client.py no longer reloads the client
+        # module (which used to leave the tool modules bound to a stale
+        # get_client and make the suite order-dependent), so every test runs.
+        run: uv run pytest --cov --cov-report=term-missing tests/
 
       - name: Enforce coverage threshold
         run: uv run coverage report
