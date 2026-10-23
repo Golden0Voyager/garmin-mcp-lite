@@ -14,8 +14,11 @@ _TOOL_MODULES = [
     "garmin_mcp_lite.tools.events",
     "garmin_mcp_lite.tools.gear",
     "garmin_mcp_lite.tools.hr_trend",
+    "garmin_mcp_lite.tools.race_prediction",
+    "garmin_mcp_lite.tools.records",
     "garmin_mcp_lite.tools.training",
     "garmin_mcp_lite.tools.weekly_stats",
+    "garmin_mcp_lite.tools.zones",
 ]
 
 
@@ -125,5 +128,43 @@ def _build_fake() -> MagicMock:
     # -- gear --
     fake.get_gear.return_value = [{"uuid": "gear_001", "customMakeModel": "Nike Vaporfly 3", "gearTypeName": "running_shoes", "maximumMeters": 800000, "retired": False, "defaultGear": True}]
     fake.get_gear_stats.return_value = {"totalDistance": 450000}
+
+    # -- race prediction --
+    def _fake_race_predictions(startdate: str | None = None, enddate: str | None = None, _type: str | None = None) -> object:
+        latest = {
+            "calendarDate": "2026-06-18", "time5K": 1295, "time10K": 2763,
+            "timeHalfMarathon": 6249, "timeMarathon": 13819,
+        }
+        if startdate:
+            return [
+                {
+                    "calendarDate": "2026-04-30", "time5K": 1329, "time10K": 2849,
+                    "timeHalfMarathon": 6433, "timeMarathon": 14208,
+                },
+                latest,
+            ]
+        return latest
+
+    fake.get_race_predictions.side_effect = _fake_race_predictions
+
+    # -- personal records --
+    fake.get_personal_record.return_value = [
+        {"typeId": 1, "value": 219.94200134277344, "prStartTimeGmtFormatted": "2025-02-13T05:16:42.0", "activityName": "Treadmill"},
+        {"typeId": 3, "value": 1249.27294921875, "prStartTimeGmtFormatted": "2025-10-13T09:35:18.0", "activityName": "Tempo 14K"},
+        {"typeId": 7, "value": 42791.80859375, "prStartTimeGmtFormatted": "2025-11-02T01:00:00.0", "activityName": "Long Run"},
+        {"typeId": 12, "value": 46963.0, "prStartTimeLocalFormatted": "2025-12-14T00:00:00.0", "activityName": None},
+        {"typeId": 28, "value": 100.0, "prStartTimeGmtFormatted": "2025-01-01T00:00:00.0", "activityName": "Gym"},
+    ]
+
+    # -- zones / thresholds --
+    fake.get_heart_rate_zones.return_value = [
+        {"trainingMethod": "HR_RESERVE", "restingHeartRateUsed": 43, "lactateThresholdHeartRateUsed": 166, "zone1Floor": 130, "zone2Floor": 141, "zone3Floor": 155, "zone4Floor": 172, "zone5Floor": 183, "maxHeartRateUsed": 198, "sport": "RUNNING"},
+        {"trainingMethod": "HR_MAX", "restingHeartRateUsed": 43, "lactateThresholdHeartRateUsed": 160, "zone1Floor": 94, "zone2Floor": 113, "zone3Floor": 132, "zone4Floor": 150, "zone5Floor": 169, "maxHeartRateUsed": 188, "sport": "CYCLING"},
+    ]
+    fake.get_lactate_threshold.return_value = {
+        "speed_and_heart_rate": {"speed": None, "heartRate": 166},
+        "power": {"functionalThresholdPower": 404, "isStale": True},
+    }
+    fake.get_cycling_ftp.return_value = {"functionalThresholdPower": 194, "calendarDate": "2025-07-30T13:30:42.373", "isStale": True}
 
     return fake

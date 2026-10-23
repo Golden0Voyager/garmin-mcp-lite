@@ -7,6 +7,7 @@
 > 2. **参数调优**：在调用 `garmin_activity_detail` 等工具时，使用 `fields` 参数来限制返回的载荷大小，以节省上下文窗口（例如：`["splits", "hrZones"]`）。
 > 3. **只读权限**：此服务器仅提供对 Garmin Connect 的只读访问权限。你无法修改或写入用户的任何数据。
 > 4. **禁止索要密码**：绝对不要向用户索要他们的 Garmin 密码。身份验证已在外部通过本地 Token 安全完成。
+> 5. **区间解读**：`garmin_activity_detail` 返回的心率区间只有秒数、没有边界。判断强度前先调用 `garmin_zones` 拿到各区间 bpm 范围。
 <!-- AI CONTEXT END -->
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -17,9 +18,9 @@
 
 精简版 Garmin MCP 服务器，专为耐力运动爱好者设计。
 
-提取了进行深度运动数据分析最核心的 10 个接口（涵盖跑步、骑行、游泳及健康数据），完美替代臃肿的 80+ 接口方案。
+提取了进行深度运动数据分析最核心的 15 个接口（涵盖跑步、骑行、游泳及健康数据），完美替代臃肿的 80+ 接口方案。
 
-## 核心工具（10个替代80+）
+## 核心工具（15个替代80+）
 
 | 工具 | 功能 |
 |:---|:---|
@@ -27,12 +28,17 @@
 | `garmin_activity_detail` | 单次活动详情（配速、心率、分段等） |
 | `garmin_training_plan` | 今日/指定日期训练课表 |
 | `garmin_training_status` | 训练状态、VO2Max、恢复时间、准备度 |
-| `garmin_health` | 睡眠/HRV/压力/身体电量 |
+| `garmin_race_prediction` | 5K/10K/半马/全马成绩预测（含配速），可看 90 天或 1 年内的变化 |
+| `garmin_personal_records` | 个人纪录：1K 到全马、最长跑/骑行、游泳、步数纪录，附创造纪录的活动 |
+| `garmin_health` | 睡眠/HRV/压力/身体电量/血氧/呼吸/步数，支持 `metric` 参数定向查询 |
+| `garmin_zones` | 各运动的心率区间边界（bpm）、乳酸阈值、FTP；用于解读 `garmin_activity_detail` 的 `hrZones` |
 | `garmin_gear` | 跑鞋/自行车装备库及里程 |
-| `garmin_device` | 设备信息及同步状态 |
+| `garmin_device` | 设备信息及固件更新状态 |
 | `garmin_hr_trend` | 近 7/30/90 天静息心率趋势 |
 | `garmin_weekly_stats` | 周/月/年训练总量统计 |
 | `garmin_coach` | Garmin Coach 训练计划概览 |
+| `garmin_events` | 赛事日历：比赛日期、目标距离、目标完赛时间 |
+| `garmin_challenges` | 进行中的挑战与徽章完成度 |
 
 ## 快速开始 (基于 PyPI & uv)
 
@@ -74,6 +80,69 @@ GARMIN_EMAIL="你的邮箱" GARMIN_PASSWORD="你的密码" uvx --with garmin-mcp
 #### Cursor / Windsurf 等其他客户端
 使用与上方完全相同的 `command` 和 `args` 即可。服务器会自动读取 `~/.garmin-mcp-lite/garmin_tokens.json` 中的缓存凭据。
 
+#### Chatbox / opencode / 其他 MCP 客户端
+
+Chatbox 这类 GUI 客户端从 Finder 启动，**不继承** shell 的 `PATH`，直接写 `uvx` 会报 `spawn uvx ENOENT`。另外 `uvx` 首次运行要下载依赖，容易超过客户端的启动超时。
+
+建议先装成常驻命令，再让所有客户端指向绝对路径：
+
+```bash
+uv tool install garmin-mcp-lite
+which garmin-mcp-lite   # → ~/.local/bin/garmin-mcp-lite
+```
+
+**Chatbox**（设置 → MCP → 添加自定义）：
+
+```json
+{
+  "mcpServers": {
+    "garmin": {
+      "command": "/Users/you/.local/bin/garmin-mcp-lite",
+      "args": []
+    }
+  }
+}
+```
+
+**opencode**（`opencode.json`）格式不同：顶层是 `mcp`，必须写 `type`，`command` 是**数组**：
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "garmin": {
+      "type": "local",
+      "command": ["/Users/you/.local/bin/garmin-mcp-lite"],
+      "enabled": true,
+      "timeout": 30000
+    }
+  }
+}
+```
+
+> opencode 的 `timeout` 默认只有 5000ms。如果坚持用 `uvx`，务必调大。
+
+### 常见问题
+
+| 现象 | 原因 | 解决 |
+|:---|:---|:---|
+| `spawn uvx ENOENT`、`MCP error -32000: Connection closed` | 客户端在 `PATH` 里找不到 `uvx` | 改用已安装命令的绝对路径 |
+| 一直连不上且无报错 | 首次下载依赖超过客户端超时 | 先 `uv tool install`，或调大 `timeout` |
+| `ModuleNotFoundError: No module named 'mcp.server.fastmcp'` | 解析到了 `mcp` 2.x | `uv tool install --with "mcp<2" garmin-mcp-lite`，或升级到 ≥ 0.1.4 |
+| 工具能列出但调用报 `Garmin token not found` | 本机没有缓存会话 | 运行 `garmin-mcp-lite-login` |
+| garmin.cn 账号报认证失败 | 客户端环境缺少 `GARMIN_IS_CN` | 配置里加 `"env": {"GARMIN_IS_CN": "true"}` |
+
+脱离客户端自检：
+
+```bash
+printf '%s\n' \
+ '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}' \
+ '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+ '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | garmin-mcp-lite
+```
+
+正常情况下会返回 `serverInfo`（版本号为本包版本）和全部 15 个工具。
+
 ## 开发者手动安装
 
 如果你想修改源码：
@@ -94,7 +163,7 @@ python -m garmin_mcp_lite.server
 
 | | Taxuspt/garmin_mcp | garmin_mcp_lite |
 |:---|:---|:---|
-| 工具数量 | 80+ | 10 |
+| 工具数量 | 80+ | 15 |
 | 命名风格 | `mcp_garmin_get_activities_by_date` | `garmin_activities` |
 | 聚合查询 | 无 | `fields` 参数控制详情粒度 |
 | 写操作 | 大量（体重/营养/装备） | 仅读（装备/体重由苹果健康同步） |

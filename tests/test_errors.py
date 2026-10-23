@@ -23,6 +23,9 @@ def _error_client() -> MagicMock:
     m.get_training_plans.side_effect = Exception("API error")
     m.get_inprogress_virtual_challenges.side_effect = Exception("API error")
     m.get_badge_challenges.side_effect = Exception("API error")
+    m.get_race_predictions.side_effect = Exception("API error")
+    m.get_personal_record.side_effect = Exception("API error")
+    m.get_heart_rate_zones.side_effect = Exception("API error")
     m.connectapi.side_effect = Exception("API error")
     return m
 
@@ -33,8 +36,11 @@ _ERROR_MODULES = [
     "garmin_mcp_lite.tools.challenges",
     "garmin_mcp_lite.tools.coach",
     "garmin_mcp_lite.tools.events",
+    "garmin_mcp_lite.tools.race_prediction",
+    "garmin_mcp_lite.tools.records",
     "garmin_mcp_lite.tools.training",
     "garmin_mcp_lite.tools.weekly_stats",
+    "garmin_mcp_lite.tools.zones",
 ]
 
 
@@ -145,3 +151,24 @@ class TestTrainingErrors:
 
         result = get_training_plan(date="2026-06-19")
         assert result["has_workout"] is False
+
+
+class TestRacePredictionErrors:
+    def test_returns_error_dict(self, patch_error: None) -> None:
+        from garmin_mcp_lite.tools.race_prediction import get_race_prediction
+
+        assert "error" in get_race_prediction()
+
+
+class TestPersonalRecordsErrors:
+    def test_returns_error_dict(self, patch_error: None) -> None:
+        from garmin_mcp_lite.tools.records import get_personal_records
+
+        assert "error" in get_personal_records()
+
+
+class TestZonesErrors:
+    def test_returns_error_dict(self, patch_error: None) -> None:
+        from garmin_mcp_lite.tools.zones import get_zones
+
+        assert "error" in get_zones()

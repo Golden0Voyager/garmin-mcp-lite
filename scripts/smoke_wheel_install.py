@@ -92,8 +92,12 @@ def version_tuple(v: str) -> tuple[int, ...]:
     return tuple(int(x) for x in re.findall(r"\d+", v)[:3]) or (0,)
 
 
-def handshake(env_python: Path, attempts: int = 3) -> tuple[str, int]:
+def handshake(env_python: Path, attempts: int = 3) -> tuple[str, str, int]:
     """Drive the installed server over stdio: initialize, initialized, tools/list.
+
+    Returns (server_name, server_version, tool_count), where server_version comes
+    from ``serverInfo`` — the version the server reports for *itself*, which must
+    be the package version rather than the version of the ``mcp`` dependency.
 
     Retries: the server writes its two responses as stdin reaches EOF, so on a
     cold CI runner the process can be torn down after answering `initialize` but
@@ -108,12 +112,12 @@ def handshake(env_python: Path, attempts: int = 3) -> tuple[str, int]:
         {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
     ]
     payload = "\n".join(json.dumps(m) for m in msgs) + "\n"
-    last = ("", 0, "")
+    last = ("", "", 0, "")
 
     for attempt in range(1, attempts + 1):
         p = subprocess.run([str(env_python), "-m", "garmin_mcp_lite.server"],
                            input=payload, capture_output=True, text=True, timeout=TIMEOUT)
-        server_name, n_tools = "", 0
+        server_name, server_version, n_tools = "", "", 0
         for line in (p.stdout or "").splitlines():
             line = line.strip()
             if not line:
@@ -125,21 +129,23 @@ def handshake(env_python: Path, attempts: int = 3) -> tuple[str, int]:
             result = msg.get("result")
             if msg.get("id") == 1 and isinstance(result, dict):
                 info = result.get("serverInfo")
-                server_name = info.get("name", "") if isinstance(info, dict) else ""
+                if isinstance(info, dict):
+                    server_name = info.get("name", "")
+                    server_version = info.get("version", "")
             elif msg.get("id") == 2 and isinstance(result, dict):
                 n_tools = len(result.get("tools") or [])
-        last = (server_name, n_tools, p.stderr or "")
+        last = (server_name, server_version, n_tools, p.stderr or "")
         if server_name and n_tools >= 1:
             if os.environ.get("SMOKE_DEBUG") and attempt > 1:
                 print(f"  [debug] handshake succeeded on attempt {attempt}")
-            return server_name, n_tools
+            return server_name, server_version, n_tools
         if os.environ.get("SMOKE_DEBUG"):
             print(f"  [debug] attempt {attempt}: rc={p.returncode} name={server_name!r} "
-                  f"tools={n_tools}")
+                  f"version={server_version!r} tools={n_tools}")
             print("  [debug] stdout:", repr((p.stdout or "")[:400]))
             print("  [debug] stderr:", repr((p.stderr or "")[:300]))
 
-    return last[0], last[1]
+    return last[0], last[1], last[2]
 
 
 def main() -> None:
@@ -187,12 +193,21 @@ def main() -> None:
                 "a lock-ignoring installer would break."
             )
 
-        name, n_tools = handshake(env_python)
+        name, server_version, n_tools = handshake(env_python)
         if not name:
             fail("MCP initialize returned no serverInfo")
         if n_tools < 1:
             fail("tools/list returned 0 tools")
-        print(f"[4/4] handshake OK: {name} v{mcp_version}, {n_tools} tools")
+        # The server used to report the version of the `mcp` dependency here,
+        # because FastMCP falls back to it when no version is supplied.
+        expected_version = wheel.stem.split("-")[1]
+        if server_version != expected_version:
+            fail(
+                f"serverInfo.version is {server_version!r}, expected the wheel version "
+                f"{expected_version!r}. The server must report its own version, not the "
+                "version of the `mcp` dependency."
+            )
+        print(f"[4/4] handshake OK: {name} v{server_version} (mcp {mcp_version}), {n_tools} tools")
         print("\nPASS: the published wheel installs lock-free and speaks MCP.")
     finally:
         shutil.rmtree(workdir, ignore_errors=True)

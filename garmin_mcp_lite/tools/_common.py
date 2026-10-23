@@ -27,6 +27,24 @@ def pace_from_speed(avg_speed: float | int | None) -> str | None:
     return f"{int(pace_s_per_km // 60):02d}:{int(pace_s_per_km % 60):02d}"
 
 
+def format_duration(seconds: float | int | None) -> str | None:
+    """Format a duration in seconds as M:SS, or H:MM:SS once it reaches an hour."""
+    if seconds is None:
+        return None
+    total = int(round(float(seconds)))
+    hours, rem = divmod(total, 3600)
+    minutes, secs = divmod(rem, 60)
+    return f"{hours}:{minutes:02d}:{secs:02d}" if hours else f"{minutes}:{secs:02d}"
+
+
+def format_pace(seconds_per_km: float | int | None) -> str | None:
+    """Format a per-kilometre pace as zero-padded MM:SS, matching pace_from_speed."""
+    if not seconds_per_km or seconds_per_km <= 0:
+        return None
+    total = int(round(float(seconds_per_km)))
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
 def activity_type_key(activity: dict) -> str:
     return (activity.get("activityType") or {}).get("typeKey", "").lower()
 

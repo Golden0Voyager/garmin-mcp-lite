@@ -8,6 +8,7 @@
 > 3. **Read-Only**: This server provides read-only access to Garmin Connect. You cannot modify user data.
 > 4. **No Password Request**: Never ask the user for their Garmin password. Authentication is handled out-of-band via a local token.
 > 5. **Health Tip**: `garmin_health` now supports a `metric` parameter — use `"steps"`, `"sleep"`, `"hrv"`, `"spo2"`, `"body_battery"`, etc., to query specific data and save context window.
+> 6. **Zone Context**: `garmin_activity_detail` returns seconds per heart rate zone but no boundaries. Call `garmin_zones` first to get the bpm ranges before judging intensity.
 <!-- AI CONTEXT END -->
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -18,9 +19,9 @@
 
 A lightweight Garmin Model Context Protocol (MCP) server, designed specifically for endurance athletes. 
 
-It exposes **12 precisely-curated endpoints** for deep analysis of running, cycling, swimming, and health data — replacing bulky 80+ endpoint alternatives with a clean, focused toolset.
+It exposes **15 precisely-curated endpoints** for deep analysis of running, cycling, swimming, and health data — replacing bulky 80+ endpoint alternatives with a clean, focused toolset.
 
-## Core Tools (12)
+## Core Tools (15)
 
 ### 🏃 Activity & Training
 
@@ -32,6 +33,8 @@ It exposes **12 precisely-curated endpoints** for deep analysis of running, cycl
 | `garmin_training_status` | Get training status, VO2Max, **acute load**, **load focus distribution** (aerobic/anaerobic), recovery time, and training readiness score. |
 | `garmin_weekly_stats` | Get weekly/monthly/yearly training volume statistics. |
 | `garmin_coach` | Overview of current Garmin Coach training plans. |
+| `garmin_race_prediction` | Predicted 5K/10K/half/marathon finish times with pace, plus the change over a 90-day or 1-year window. |
+| `garmin_personal_records` | Personal bests (1K → marathon, longest run/ride, swim times, step records) with the activity that set each one. |
 
 ### 💚 Health & Wellness
 
@@ -39,6 +42,7 @@ It exposes **12 precisely-curated endpoints** for deep analysis of running, cycl
 |:---|:---|
 | `garmin_health` | Get comprehensive health metrics: sleep quality, HRV status, stress, body battery, **SpO2**, **respiration rate**, **intensity minutes**, **daily steps**, **floors climbed**, and resting heart rate. Supports `metric` parameter for targeted queries. |
 | `garmin_hr_trend` | Get resting heart rate trends for the last 7/30/90 days. |
+| `garmin_zones` | Heart rate zone boundaries (bpm ranges) per sport, plus lactate threshold and FTP. Use it to interpret the `hrZones` durations returned by `garmin_activity_detail`. |
 
 ### 🎯 Goals & Challenges
 
@@ -91,9 +95,72 @@ Add this to your `~/Library/Application Support/Claude/claude_desktop_config.jso
 }
 ```
 
-#### Cursor / Windsurf / Gemini CLI / Other MCP Clients
+#### Cursor / Windsurf / Gemini CLI
 
 Use the exact same `command` and `args` as above. The server will automatically load the cached token from `~/.garmin-mcp-lite/garmin_tokens.json`.
+
+#### Chatbox / opencode / Other MCP Clients
+
+GUI clients such as Chatbox are launched from Finder and do **not** inherit your shell `PATH`, so a bare `uvx` fails with `spawn uvx ENOENT`. `uvx` also downloads the package on first run, which can exceed a client's startup timeout.
+
+Install the server once as a regular command, then point every client at its absolute path:
+
+```bash
+uv tool install garmin-mcp-lite
+which garmin-mcp-lite   # → ~/.local/bin/garmin-mcp-lite
+```
+
+**Chatbox** (Settings → MCP → Add custom):
+
+```json
+{
+  "mcpServers": {
+    "garmin": {
+      "command": "/Users/you/.local/bin/garmin-mcp-lite",
+      "args": []
+    }
+  }
+}
+```
+
+**opencode** (`opencode.json`) uses a different schema — the key is `mcp`, `type` is required, and `command` is an array:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "garmin": {
+      "type": "local",
+      "command": ["/Users/you/.local/bin/garmin-mcp-lite"],
+      "enabled": true,
+      "timeout": 30000
+    }
+  }
+}
+```
+
+> opencode's `timeout` defaults to 5000 ms. Raise it if you insist on `uvx` instead of an installed command.
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|:---|:---|:---|
+| `spawn uvx ENOENT`, `MCP error -32000: Connection closed` | client cannot find `uvx` on `PATH` | use the absolute path of the installed command |
+| Server never connects, no error shown | first-run download exceeded the client timeout | `uv tool install` first, or raise `timeout` |
+| `ModuleNotFoundError: No module named 'mcp.server.fastmcp'` | `mcp` 2.x was resolved by a lock-ignoring install | `uv tool install --with "mcp<2" garmin-mcp-lite`, or upgrade to ≥ 0.1.4 |
+| Tools list loads, calls fail with `Garmin token not found` | no cached session on this machine | run `garmin-mcp-lite-login` |
+| `Authentication failed` on a garmin.cn account | `GARMIN_IS_CN` missing from the client's env | add `"env": {"GARMIN_IS_CN": "true"}` |
+
+Verify the server independently of any client:
+
+```bash
+printf '%s\n' \
+ '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}' \
+ '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+ '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | garmin-mcp-lite
+```
+
+Expect a `serverInfo` line reporting this package's version, followed by all 15 tools.
 
 ## Manual Installation (for Developers)
 
@@ -126,7 +193,7 @@ Once connected, you can ask your AI assistant natural-language questions like:
 
 | | Taxuspt/garmin_mcp | garmin_mcp_lite |
 |:---|:---|:---|
-| Tool Count | 80+ | 12 |
+| Tool Count | 80+ | 15 |
 | Naming | `mcp_garmin_get_activities_by_date` | `garmin_activities` |
 | Deep Queries | No | `fields` parameter controls detail granularity |
 | Training Load | Basic | Acute load + load focus distribution |

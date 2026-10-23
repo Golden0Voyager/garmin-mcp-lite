@@ -6,6 +6,8 @@ from garmin_mcp_lite.tools._common import (
     activity_local_date,
     activity_type_key,
     days_ago_str,
+    format_duration,
+    format_pace,
     get_first,
     pace_from_speed,
     summarize_activity,
@@ -58,6 +60,34 @@ class TestPaceFromSpeed:
         # 5.0 m/s ≈ 3:20 /km
         result = pace_from_speed(5.0)
         assert result == "03:20"
+
+
+class TestFormatDuration:
+    def test_under_an_hour(self) -> None:
+        assert format_duration(1295) == "21:35"
+
+    def test_over_an_hour(self) -> None:
+        assert format_duration(6249) == "1:44:09"
+
+    def test_rounds_seconds(self) -> None:
+        assert format_duration(219.94) == "3:40"
+
+    def test_returns_none_for_none(self) -> None:
+        assert format_duration(None) is None
+
+
+class TestFormatPace:
+    def test_pads_to_mm_ss(self) -> None:
+        assert format_pace(259) == "04:19"
+
+    def test_handles_pace_over_ten_minutes(self) -> None:
+        assert format_pace(605) == "10:05"
+
+    def test_returns_none_for_zero(self) -> None:
+        assert format_pace(0) is None
+
+    def test_returns_none_for_none(self) -> None:
+        assert format_pace(None) is None
 
 
 class TestActivityTypeKey:
