@@ -17,7 +17,7 @@
 
 *Read this in other languages: [English](README.md), [简体中文](README.zh-CN.md).*
 
-A lightweight Garmin Model Context Protocol (MCP) server, designed specifically for endurance athletes. 
+A lightweight Garmin Model Context Protocol (MCP) server, designed specifically for endurance athletes.
 
 It exposes **15 precisely-curated endpoints** for deep analysis of running, cycling, swimming, and health data — replacing bulky 80+ endpoint alternatives with a clean, focused toolset.
 
@@ -58,57 +58,68 @@ It exposes **15 precisely-curated endpoints** for deep analysis of running, cycl
 | `garmin_gear` | Get your shoe/bike gear list and their **real cumulative mileage**. |
 | `garmin_device` | Get connected device info: firmware version, **update availability**, primary device status, and registration date. |
 
-## Quickstart (via PyPI & uv)
+## Quickstart
 
-The easiest way to run this server is using `uvx` (no cloning required).
+There are two ways to run the server. **Installing it as a command is the safer default** — it starts in well under a second, needs no network at launch, and GUI clients can find it. `uvx` works too, but it downloads on first run and is invisible to clients that do not inherit your shell `PATH`.
 
-### 1. Authenticate (First Time Only)
-
-**Why not just put the password in the AI config?**
-Garmin has strict security measures. Logging in from a new location/MCP server often triggers Cloudflare CAPTCHAs or MFA email codes. If the password is in Claude's background config, the AI assistant will silently freeze or fail when challenged, with no way for you to input the code.
-
-Therefore, this plugin uses a secure **two-step strategy**: Run a login script in your terminal first. If challenged, you can interactively input the MFA code. Upon success, a session token is cached locally (valid for ~1 year).
+### 1. Install
 
 ```bash
-GARMIN_EMAIL="your@email.com" GARMIN_PASSWORD="your_password" uvx --with garmin-mcp-lite garmin-mcp-lite-login
+uv tool install garmin-mcp-lite
+which garmin-mcp-lite     # → ~/.local/bin/garmin-mcp-lite
 ```
-*(💡 **China Region Users**: If your account is registered in Garmin China (garmin.cn), prefix the command with `GARMIN_IS_CN=true`.)*
 
-### 2. Configure Your AI Assistant
+<details>
+<summary>Alternative: run via <code>uvx</code> without installing</summary>
 
-Once authenticated, add the server to your favorite MCP-compatible AI assistant.
+```bash
+uvx garmin-mcp-lite
+```
+
+Fine for terminal clients such as Claude Code or Codex CLI. See [Troubleshooting](#troubleshooting) for why GUI clients usually need the installed path instead.
+</details>
+
+### 2. Authenticate (First Time Only)
+
+**Why not just put the password in the AI config?**
+Garmin has strict security measures. Logging in from a new location/MCP server often triggers Cloudflare CAPTCHAs or MFA email codes. If the password sits in a client's background config, the AI assistant silently freezes when challenged, with no way for you to type the code in.
+
+So this project uses a **two-step strategy**: run the login script in your terminal first. If Garmin challenges you, you can type the MFA code interactively. On success the session token is cached locally and stays valid for roughly a year.
+
+```bash
+GARMIN_EMAIL="your@email.com" GARMIN_PASSWORD="your_password" garmin-mcp-lite-login
+```
+
+*(💡 **China Region Users**: if your account is registered with Garmin China (garmin.cn), prefix the command with `GARMIN_IS_CN=true`.)*
+
+The token is written to `~/.garmin-mcp-lite/garmin_tokens.json`. Set `GARMIN_TOKEN_DIR` to keep several clients or accounts on separate sessions.
+
+### 3. Configure Your AI Assistant
 
 #### Claude Desktop
 
-Add this to your `~/Library/Application Support/Claude/claude_desktop_config.json`:
+Add this to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "garmin-lite": {
-      "command": "uvx",
-      "args": [
-        "garmin-mcp-lite"
-      ]
+      "command": "/Users/you/.local/bin/garmin-mcp-lite",
+      "args": []
     }
   }
 }
 ```
 
+Prefer `uvx`? Use `"command": "uvx"` with `"args": ["garmin-mcp-lite"]`.
+
 #### Cursor / Windsurf / Gemini CLI
 
-Use the exact same `command` and `args` as above. The server will automatically load the cached token from `~/.garmin-mcp-lite/garmin_tokens.json`.
+Use the same `command` and `args` as above.
 
-#### Chatbox / opencode / Other MCP Clients
+#### Chatbox / opencode / Other GUI Clients
 
-GUI clients such as Chatbox are launched from Finder and do **not** inherit your shell `PATH`, so a bare `uvx` fails with `spawn uvx ENOENT`. `uvx` also downloads the package on first run, which can exceed a client's startup timeout.
-
-Install the server once as a regular command, then point every client at its absolute path:
-
-```bash
-uv tool install garmin-mcp-lite
-which garmin-mcp-lite   # → ~/.local/bin/garmin-mcp-lite
-```
+GUI clients such as Chatbox are launched from Finder and do **not** inherit your shell `PATH`, so a bare `uvx` fails with `spawn uvx ENOENT`. Point them at the absolute path from step 1.
 
 **Chatbox** (Settings → MCP → Add custom):
 
@@ -141,6 +152,14 @@ which garmin-mcp-lite   # → ~/.local/bin/garmin-mcp-lite
 
 > opencode's `timeout` defaults to 5000 ms. Raise it if you insist on `uvx` instead of an installed command.
 
+### Environment Variables
+
+| Variable | Default | Purpose |
+|:---|:---|:---|
+| `GARMIN_IS_CN` | unset | Set to `true` for accounts registered with Garmin China (garmin.cn). Must match the region used at login. |
+| `GARMIN_TOKEN_DIR` | `~/.garmin-mcp-lite` | Where the session token lives. Change it to isolate multiple accounts. |
+| `GARMIN_EMAIL` / `GARMIN_PASSWORD` | unset | Login script only. Never needed by the server itself. |
+
 ### Troubleshooting
 
 | Symptom | Cause | Fix |
@@ -150,6 +169,7 @@ which garmin-mcp-lite   # → ~/.local/bin/garmin-mcp-lite
 | `ModuleNotFoundError: No module named 'mcp.server.fastmcp'` | `mcp` 2.x was resolved by a lock-ignoring install | `uv tool install --with "mcp<2" garmin-mcp-lite`, or upgrade to ≥ 0.1.4 |
 | Tools list loads, calls fail with `Garmin token not found` | no cached session on this machine | run `garmin-mcp-lite-login` |
 | `Authentication failed` on a garmin.cn account | `GARMIN_IS_CN` missing from the client's env | add `"env": {"GARMIN_IS_CN": "true"}` |
+| Zones look too high, "easy" runs land in Z3 | max heart rate set above your real one | check `garmin_zones`, then fix MaxHR in Garmin Connect |
 
 Verify the server independently of any client:
 
@@ -161,6 +181,24 @@ printf '%s\n' \
 ```
 
 Expect a `serverInfo` line reporting this package's version, followed by all 15 tools.
+
+## Example Queries
+
+Once connected, you can ask your AI assistant natural-language questions like:
+
+**Training**
+- *"What's my training load focus this week?"*
+- *"Show me my race goal for June and what my current predicted finish time is."*
+- *"Compare my marathon PB against the current prediction."*
+
+**Health**
+- *"How many steps have I taken today? Am I on track for my daily goal?"*
+- *"Analyze my sleep quality from last night."*
+- *"What are my heart rate zones for running, and where does my lactate threshold sit?"*
+
+**Gear & Goals**
+- *"How's my Grossglockner virtual climb challenge going?"*
+- *"Is my Descent G1 firmware up to date?"*
 
 ## Manual Installation (for Developers)
 
@@ -178,16 +216,14 @@ GARMIN_EMAIL="your@email.com" GARMIN_PASSWORD="your_password" python -m garmin_m
 python -m garmin_mcp_lite.server
 ```
 
-## Example Queries
+Run the same gates CI runs before opening a PR:
 
-Once connected, you can ask your AI assistant natural-language questions like:
-
-- *"What's my training load focus this week?"*
-- *"Show me my race goal for June and what my current predicted finish time is."*
-- *"How's my Grossglockner virtual climb challenge going?"*
-- *"Is my Descent G1 firmware up to date?"*
-- *"How many steps have I taken today? Am I on track for my daily goal?"*
-- *"Analyze my sleep quality from last night."*
+```bash
+uv run ruff check garmin_mcp_lite/ tests/ scripts/
+uv run mypy garmin_mcp_lite/
+uv run pytest --cov -k 'not test_get_client' tests/
+python3 scripts/smoke_wheel_install.py
+```
 
 ## Comparison with Other Garmin MCPs
 
@@ -197,9 +233,27 @@ Once connected, you can ask your AI assistant natural-language questions like:
 | Naming | `mcp_garmin_get_activities_by_date` | `garmin_activities` |
 | Deep Queries | No | `fields` parameter controls detail granularity |
 | Training Load | Basic | Acute load + load focus distribution |
+| Performance | No | Race predictions + personal records |
+| Zones | No | HR zone boundaries + lactate threshold + FTP |
 | Health Depth | Basic | SpO2, respiration, intensity minutes, steps |
 | Race/Challenge | No | Events calendar + challenge progress |
 | Write Ops | Heavy (weight/nutrition/gear) | Read-only |
+| Schema cost | High | ~2.3k tokens for all 15 tools |
+
+## Changelog
+
+### 0.1.6
+- Repackage only: the 0.1.5 sdist accidentally shipped a local notes file. No code changes.
+
+### 0.1.5
+- New: `garmin_race_prediction` — predicted 5K/10K/half/marathon times, with 90-day and 1-year trends.
+- New: `garmin_personal_records` — personal bests with the activity that set each one.
+- New: `garmin_zones` — per-sport heart rate zone boundaries, lactate threshold, and FTP.
+- Fix: `serverInfo.version` reported the `mcp` dependency's version instead of this package's.
+- Docs: client setup for Chatbox and opencode, troubleshooting table, environment variables.
+
+### 0.1.4
+- Cap `mcp<2.0` so lock-ignoring installers (`uvx`, `pip`) stop resolving `mcp` 2.x.
 
 ## License
 
