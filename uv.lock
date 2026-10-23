@@ -478,7 +478,7 @@ wheels = [
 
 [[package]]
 name = "garmin-mcp-lite"
-version = "0.1.6"
+version = "0.1.7"
 source = { editable = "." }
 dependencies = [
     { name = "curl-cffi" },

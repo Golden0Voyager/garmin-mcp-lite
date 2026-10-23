@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""端到端测试脚本 —— 逐个验证 garmin-mcp-lite 暴露的全部 15 个工具。
+"""端到端测试脚本 —— 逐个验证 garmin-mcp-lite 暴露的 16 个读取工具。
+
+`garmin_add_body_composition` 是唯一的写入工具，不在这里自动执行：它会真的往
+Garmin 账号写数据。需要验证时单独用 `--write-test` 显式开启。
 
 每个步骤独立 try/except：单个工具失败不会中断后续检查，
 最后统一汇总。退出码非 0 表示至少有一个工具失败。
 
 用法（需要先登录）:
-    python test_e2e.py
+    python test_e2e.py                 # 只跑读取
+    python test_e2e.py --write-test    # 额外验证写入（会改动账号数据）
 """
 from __future__ import annotations
 
@@ -154,6 +158,40 @@ def check_personal_records() -> None:
         print(f"    - {r['type']}: {r['value']} ({r['date']})")
 
 
+def check_body_composition() -> None:
+    from garmin_mcp_lite.tools.body import get_body_composition
+
+    result = get_body_composition(days=400, limit=3)
+    if "error" in result:
+        raise RuntimeError(result["error"])
+    print(f"  记录数: {result['count']}（窗口 {result['range']['start']} ~ {result['range']['end']}）")
+    for record in result["records"]:
+        metrics = {k: v for k, v in record.items() if k not in ("date", "source")}
+        print(f"    {record['date']}: {metrics} ({record.get('source')})")
+    if result.get("change"):
+        c = result["change"]
+        print(f"  变化: {c['weight_kg']:+.2f} kg ({c['from']} -> {c['to']})")
+
+
+def check_add_body_composition() -> None:
+    """Write today's weight back to Garmin — only with --write-test."""
+    from garmin_mcp_lite.tools.body import add_body_composition, get_body_composition
+
+    current = get_body_composition(days=30, limit=1).get("latest") or {}
+    weight = current.get("weight_kg")
+    if not isinstance(weight, (int, float)):
+        raise RuntimeError("账号里没有可复用的体重，跳过写入验证")
+
+    print(f"  用最近一次的 {weight} kg 写回今天（会新增一条记录）")
+    result = add_body_composition(weight=weight)
+    if not result.get("written"):
+        raise RuntimeError(result.get("error") or "写入失败")
+    print(f"  written={result['written']} status={result.get('garmin_status')} date={result['date']}")
+    if result.get("warning"):
+        print(f"  ⚠️  {result['warning']}")
+
+
+
 def check_zones() -> None:
     from garmin_mcp_lite.tools.zones import get_zones
 
@@ -186,6 +224,7 @@ _STEPS = [
     ("garmin_race_prediction", check_race_prediction),
     ("garmin_personal_records", check_personal_records),
     ("garmin_zones", check_zones),
+    ("garmin_body_composition", check_body_composition),
 ]
 
 
@@ -194,10 +233,16 @@ def main() -> int:
     print("garmin-mcp-lite 端到端测试")
     print("=" * 50)
 
-    failures: list[str] = []
-    total = len(_STEPS)
+    steps = list(_STEPS)
+    if "--write-test" in sys.argv[1:]:
+        # Opt-in only: this appends a weigh-in to the real account.
+        steps.append(("garmin_add_body_composition", check_add_body_composition))
+        print("⚠️  已启用写入验证，会往账号新增一条今天的体重记录")
 
-    for index, (name, step) in enumerate(_STEPS, start=1):
+    failures: list[str] = []
+    total = len(steps)
+
+    for index, (name, step) in enumerate(steps, start=1):
         print(f"\n[{index}/{total}] 测试 {name} ...")
         try:
             step()

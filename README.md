@@ -19,9 +19,11 @@
 
 A lightweight Garmin Model Context Protocol (MCP) server, designed specifically for endurance athletes.
 
-It exposes **15 precisely-curated endpoints** for deep analysis of running, cycling, swimming, and health data — replacing bulky 80+ endpoint alternatives with a clean, focused toolset.
+It exposes **17 precisely-curated endpoints** for deep analysis of running, cycling, swimming, and health data — replacing bulky 80+ endpoint alternatives with a clean, focused toolset.
 
-## Core Tools (15)
+16 of them read. One (`garmin_add_body_composition`) writes, because Garmin has no way to accept weight data from a third-party scale.
+
+## Core Tools (17)
 
 ### 🏃 Activity & Training
 
@@ -43,6 +45,15 @@ It exposes **15 precisely-curated endpoints** for deep analysis of running, cycl
 | `garmin_health` | Get comprehensive health metrics: sleep quality, HRV status, stress, body battery, **SpO2**, **respiration rate**, **intensity minutes**, **daily steps**, **floors climbed**, and resting heart rate. Supports `metric` parameter for targeted queries. |
 | `garmin_hr_trend` | Get resting heart rate trends for the last 7/30/90 days. |
 | `garmin_zones` | Heart rate zone boundaries (bpm ranges) per sport, plus lactate threshold and FTP. Use it to interpret the `hrZones` durations returned by `garmin_activity_detail`. |
+
+### ⚖️ Body Composition
+
+| Tool | Functionality |
+|:---|:---|
+| `garmin_body_composition` | Weight and body-composition history: weight, BMI, body fat %, body water %, muscle mass, bone mass, visceral fat, metabolic age. Mass is normalised to kilograms and unmeasured fields are omitted. |
+| `garmin_add_body_composition` | **Write** one measurement (weight required, everything else optional). Uploads a FIT body-composition file — the same channel Garmin's own Index scale uses. |
+
+> **`garmin_add_body_composition` writes to your Garmin account.** There is no undo through this tool. Garmin keeps every entry, so calling it twice for the same day can leave two weigh-ins; the response warns you when that day already had one. `weight` is in **kilograms** — values above 500 are rejected as an accidental gram value, because the read tool returns grams at the API level and a read-modify-write is the obvious way to get this wrong. Garmin's upload endpoint does not always report a status, so the tool reads the day back and returns `verified: true` only when the stored weight matches what it sent.
 
 ### 🎯 Goals & Challenges
 
@@ -253,6 +264,16 @@ python test_e2e.py
 | Schema cost | High | ~2.3k tokens for all 15 tools |
 
 ## Changelog
+
+### 0.1.7
+- New: `garmin_body_composition` — weight/BMI/body-fat/muscle-mass history. Garmin
+  returns mass in grams; it is normalised to kilograms and null fields are dropped.
+- New: `garmin_add_body_composition` — the first (and only) write tool. Uploads a FIT
+  body-composition file, the same channel the Garmin Index scale uses. Weights above
+  500 kg are rejected as an accidental gram value, and the response warns when the
+  day already had an entry.
+- `test_e2e.py` grew a `--write-test` flag; the write path is opt-in so a routine
+  end-to-end run never touches account data.
 
 ### 0.1.6
 - Fix: `garmin_events` crashed with `'NoneType' object has no attribute 'get'` on any

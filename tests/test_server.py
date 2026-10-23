@@ -1,6 +1,6 @@
 """Tests for the MCP server itself: the tool registry and the reported version.
 
-`server.py` used to be excluded from coverage, which meant the 15 `add_tool()`
+`server.py` used to be excluded from coverage, which meant the `add_tool()`
 calls — the single place where a tool's public name is decided — had no test at
 all. A typo there is invisible to every other test (they import the tool
 functions directly) and only surfaces as a missing tool in a client's
@@ -34,6 +34,8 @@ EXPECTED_TOOLS: dict[str, tuple[str, str]] = {
     "garmin_race_prediction": ("race_prediction", "get_race_prediction"),
     "garmin_personal_records": ("records", "get_personal_records"),
     "garmin_zones": ("zones", "get_zones"),
+    "garmin_body_composition": ("body", "get_body_composition"),
+    "garmin_add_body_composition": ("body", "add_body_composition"),
 }
 
 
