@@ -22,3 +22,6 @@ scratch/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Agent workspace data (session notes, memory) — must never be packaged
+.workbuddy-ai/
