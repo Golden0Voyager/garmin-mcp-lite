@@ -516,10 +516,27 @@ class TestLogin:
         assert token["userId"] == "7"
         assert token["passToken"] == "pt"
 
+    def test_reports_xiaomis_rejection_code_not_a_missing_field(self) -> None:
+        # A rejected password returns `location: ""` alongside `code: 70016`, so
+        # the old message blamed a missing field while the answer was right there.
+        login = self._login()
+        login._service_login = MagicMock(
+            return_value={
+                "code": 70016,
+                "description": "登录验证失败",
+                "location": "",
+                "captchaUrl": None,
+                "callback": "https://sts-hlth.io.mi.com/healthapp/sts",
+            }
+        )
+
+        with pytest.raises(xiaomi.XiaomiError, match="code 70016.*登录验证失败"):
+            login.login("user@example.com", "wrong-password", prompt=lambda _: "")
+
     def test_credentials_require_a_location(self) -> None:
         login = self._login()
 
-        with pytest.raises(xiaomi.XiaomiError, match="no location"):
+        with pytest.raises(xiaomi.XiaomiError, match="no usable location"):
             login._credentials({"code": 0})
 
     def test_credentials_require_ssecurity(self) -> None:

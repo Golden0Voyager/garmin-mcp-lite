@@ -166,7 +166,16 @@ class MiLogin:
     def _credentials(self, payload: dict[str, Any]) -> dict[str, str]:
         location = payload.get("location")
         if not location:
-            raise XiaomiError(f"Login response has no location field: {payload}")
+            # An empty string is what a rejected login returns, so this branch is
+            # reached with a body that already explains itself.
+            code = payload.get("code")
+            if isinstance(code, int) and code != 0:
+                raise XiaomiError(
+                    f"Xiaomi rejected the login (code {code}: "
+                    f"{payload.get('description') or payload.get('desc') or 'no reason given'}). "
+                    "This is a credential rejection, not a network problem."
+                )
+            raise XiaomiError(f"Login response has no usable location: {payload}")
 
         r = self.session.get(location, timeout=30)
         merged = dict(payload)
