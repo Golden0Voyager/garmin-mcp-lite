@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""端到端测试脚本 —— 逐个验证 garmin-mcp-lite 暴露的 16 个读取工具。
+"""端到端测试脚本 —— 逐个验证 garmin-mcp-lite 暴露的工具。
 
-`garmin_add_body_composition` 是唯一的写入工具，不在这里自动执行：它会真的往
-Garmin 账号写数据。需要验证时单独用 `--write-test` 显式开启。
+`garmin_sync_weight` 以 dry_run 模式执行：只读小米、只读 Garmin、不写入。
+`garmin_add_body_composition` 是唯一的真实写入工具，不在这里自动执行：它会真的
+往 Garmin 账号写数据。需要验证时单独用 `--write-test` 显式开启。
 
 每个步骤独立 try/except：单个工具失败不会中断后续检查，
 最后统一汇总。退出码非 0 表示至少有一个工具失败。
 
 用法（需要先登录）:
-    python test_e2e.py                 # 只跑读取
+    python test_e2e.py                 # 只跑读取 + 干跑同步
     python test_e2e.py --write-test    # 额外验证写入（会改动账号数据）
 """
 from __future__ import annotations
@@ -192,6 +193,27 @@ def check_add_body_composition() -> None:
 
 
 
+def check_sync_weight() -> None:
+    """Dry-run the Xiaomi -> Garmin sync. Reads both sides, writes nothing."""
+    from garmin_mcp_lite.tools.weight_sync import sync_weight
+
+    result = sync_weight(days=7, dry_run=True)
+    if result.get("error"):
+        # Not having a Xiaomi account is a valid configuration, not a failure.
+        if "xiaomi-login" in result["error"]:
+            print("  未配置小米账号，跳过（不影响其他检查）")
+            return
+        raise RuntimeError(result["error"])
+
+    xiaomi = result["xiaomi"]
+    print(f"  小米侧 {xiaomi['weigh_ins']} 次称重 / {xiaomi['days']} 天（同一天折叠 {xiaomi['same_day_collapsed']} 次）")
+    print(f"  待写入 {len(result['written'])} 天 | Garmin 已有 {len(result['skipped'])} 天")
+    for item in result["written"][:5]:
+        print(f"    {item['date']}: {item['weight_kg']} kg")
+    if result.get("note"):
+        print(f"  注意: {result['note']}")
+
+
 def check_zones() -> None:
     from garmin_mcp_lite.tools.zones import get_zones
 
@@ -225,6 +247,7 @@ _STEPS = [
     ("garmin_personal_records", check_personal_records),
     ("garmin_zones", check_zones),
     ("garmin_body_composition", check_body_composition),
+    ("garmin_sync_weight (dry run)", check_sync_weight),
 ]
 
 

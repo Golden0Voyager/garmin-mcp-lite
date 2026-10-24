@@ -18,11 +18,11 @@
 
 精简版 Garmin MCP 服务器，专为耐力运动爱好者设计。
 
-提取了进行深度运动数据分析最核心的 17 个接口（涵盖跑步、骑行、游泳、健康及体成分数据），完美替代臃肿的 80+ 接口方案。
+提取了进行深度运动数据分析最核心的 18 个接口（涵盖跑步、骑行、游泳、健康及体成分数据），完美替代臃肿的 80+ 接口方案。
 
-其中 16 个是只读，只有 `garmin_add_body_composition` 会写入 —— 因为 Garmin 没有接收第三方体重秤数据的入口。
+其中 16 个是只读，两个会写入：`garmin_add_body_composition` 记一条手动体重，`garmin_sync_weight` 从小米体脂秤拉取 —— 因为 Garmin 没有接收第三方体重秤数据的入口。
 
-## 核心工具（17 个替代 80+）
+## 核心工具（18 个替代 80+）
 
 ### 🏃 活动与训练
 
@@ -51,6 +51,7 @@
 |:---|:---|
 | `garmin_body_composition` | 体重与体成分历史：体重、BMI、体脂率、体水分、肌肉量、骨量、内脏脂肪、代谢年龄。质量统一换算为千克，未测量的字段直接省略 |
 | `garmin_add_body_composition` | **写入**一条测量记录（体重必填，其余可选）。以 FIT 体成分文件上传，与 Garmin 自家 Index 体脂秤走同一条通道 |
+| `garmin_sync_weight` | **写入**小米体脂秤的称重记录到 Garmin。只补 Garmin 还没有的天，因此可重复执行。需先跑一次 `garmin-mcp-lite-xiaomi-login` |
 
 > **`garmin_add_body_composition` 会写入你的 Garmin 账号**，本工具没有撤销能力。Garmin 不去重，同一天调用两次可能留下两条记录 —— 若当天已有数据，返回结果会带 `warning`。`weight` 单位是**千克**，超过 500 会被判定为误传克值并拒绝：读取接口在 API 层返回的是克，读改写是最容易踩的坑。Garmin 的上传接口不一定会返回状态，因此工具会回读当天数据，只有存储值与提交值一致时才返回 `verified: true`。
 
@@ -190,7 +191,30 @@ printf '%s\n' \
  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | garmin-mcp-lite
 ```
 
-正常情况下会返回 `serverInfo`（版本号为本包版本）和全部 15 个工具。
+正常情况下会返回 `serverInfo`（版本号为本包版本）和全部 18 个工具。
+
+## 同步小米体脂秤
+
+`garmin_sync_weight` 把小米运动健康（Mi Fitness）里的称重记录补进 Garmin，只写 Garmin 还没有的那几天。不需要定时任务，也不需要常驻进程：想起来调一次就行，隔了一周的数据一次就能补齐。
+
+```bash
+garmin-mcp-lite-xiaomi-login        # 只此一次：登录并报告云端有什么
+```
+
+登录要过图形验证码、可能要短信验证码，所以做不成工具调用。跑完它会打印记录数、时间范围、数据来源和最近五条 —— 如果显示 **0 条**，说明秤绑的是 Zepp Life，那套数据在另一个云、另一套 API，这个工具读不到。
+
+然后直接问：
+
+> 把小米秤的体重同步过来（先 dry run）
+
+`dry_run=true` 只报告会写什么，不实际写。真正执行时，每一天都会以 FIT 体成分文件上传（与 Garmin Index 秤同一条通道），并回读当天记录确认写入成功。
+
+两个细节：
+
+- **一天只取最早那次。** 早晨空腹体重才是趋势线要的东西，当天其余几次会被折叠并计数。
+- **重复执行不会写重复。** Garmin 已有的天直接跳过，所以误触、重试都无害。
+
+小米 token 缓存在 `~/.garmin-mcp-lite/xiaomi.json`（权限 600），与 Garmin token 同目录。改密码、触发安全校验或长期不用都会让它失效，重新跑一次上面的命令即可。注意该 token 具备账号级权限，请当密码一样保管。
 
 ## 可以这样提问
 
@@ -235,11 +259,11 @@ uv run pytest --cov tests/
 python3 scripts/smoke_wheel_install.py
 ```
 
-当前语句覆盖率 100%，包含 `server.py` 里的 15 个工具注册表。
+当前语句覆盖率 100%，包含 `server.py` 里的 18 个工具注册表。
 `tests/test_server.py` 把工具名逐个钉死了，改名或漏注册会直接测试失败，
 而不是悄悄从客户端的 `tools/list` 里消失。
 
-另有一个跑真实账号的端到端脚本，会把 15 个工具全部走一遍（需要先登录）：
+另有一个跑真实账号的端到端脚本，会把 18 个工具全部走一遍（需要先登录）：
 
 ```bash
 python test_e2e.py
@@ -256,17 +280,23 @@ python test_e2e.py
 | 心率区间 | 无 | 区间边界 + 乳酸阈值 + FTP |
 | 健康深度 | 基础 | 血氧、呼吸、强度分钟、步数 |
 | 写操作 | 大量（体重/营养/装备） | 仅读 |
-| Schema 开销 | 高 | 15 个工具共约 2.3k tokens |
+| Schema 开销 | 高 | 18 个工具共约 2.3k tokens |
 
 ## 变更记录
 
 ### 0.1.7
 - 新增 `garmin_body_composition`：体重/BMI/体脂率/肌肉量历史。Garmin 返回的质量单位是克，
   统一换算为千克，值为 null 的字段直接省略。
-- 新增 `garmin_add_body_composition`：本项目第一个（也是唯一一个）写入工具。以 FIT 体成分
+- 新增 `garmin_add_body_composition`：本项目第一个写入工具。以 FIT 体成分
   文件上传，与 Garmin Index 体脂秤走同一条通道。超过 500 千克的体重会被判定为误传克值并
   拒绝；当天已有记录时返回 `warning`。
 - `test_e2e.py` 新增 `--write-test` 开关，写入验证需显式开启，日常端到端测试不碰账号数据。
+
+- 新增 `garmin_sync_weight`：把小米体脂秤的称重记录同步进 Garmin，只补缺失的天。
+  附带 `garmin_mcp_lite.xiaomi` —— 小米运动健康私有协议（RC4 + 双重 SHA1 签名，
+  无公开文档）的只读客户端，在此重新实现，因此除 `requests` 外不引入新依赖；
+  以及 `garmin-mcp-lite-xiaomi-login` 命令行入口，用于那一次无法绕开验证码的交互登录。
+- `test_e2e.py` 中 `garmin_sync_weight` 默认以 dry_run 运行，未配置小米账号时自动跳过。
 
 ### 0.1.6
 - 修复：`garmin_events` 在遇到没有自定义目标的赛事时报
@@ -285,7 +315,7 @@ python test_e2e.py
   15 个工具注册表真正被断言。
 - 测试：`tests/test_client.py` 不再 reload 客户端模块，所以 CI 里
   `-k 'not test_get_client'` 这个过滤条件被去掉了。
-- 测试：`test_e2e.py` 覆盖全部 15 个工具（原来 9 个），单个工具失败不再中断后续检查。
+- 测试：`test_e2e.py` 覆盖全部 18 个工具（原来 9 个），单个工具失败不再中断后续检查。
 - 重新打包：0.1.5 的 sdist 误打包了一个本地笔记文件。
 
 ### 0.1.5

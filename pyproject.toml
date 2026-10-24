@@ -29,6 +29,11 @@ dependencies = [
     "garminconnect>=0.2.25",
     "pydantic>=2.0",
     "curl-cffi>=0.7.0",
+    # Xiaomi's health cloud speaks a private RC4/SHA1-signed protocol that has
+    # no client library, so the requests are made directly. garminconnect
+    # already pulls requests in, but relying on a transitive dependency for a
+    # module we import ourselves is how wheels break silently.
+    "requests>=2.28",
 ]
 
 [project.urls]
@@ -39,6 +44,8 @@ Issues = "https://github.com/Golden0Voyager/garmin-mcp-lite/issues"
 [project.scripts]
 garmin-mcp-lite = "garmin_mcp_lite.server:main"
 garmin-mcp-lite-login = "garmin_mcp_lite.login:main"
+# Xiaomi's login needs a captcha and an SMS code, so it cannot be a tool call.
+garmin-mcp-lite-xiaomi-login = "garmin_mcp_lite.xiaomi_login:main"
 
 [project.optional-dependencies]
 dev = [
@@ -79,7 +86,9 @@ source = ["garmin_mcp_lite"]
 # and cannot be exercised in CI. server.py used to be omitted too, but that left
 # the 15 tool registrations — the only place a tool's public name is defined —
 # with no test coverage at all, so it is measured now (see tests/test_server.py).
-omit = ["garmin_mcp_lite/login.py"]
+# xiaomi_login.py is the same one-shot shape as login.py; the client it drives
+# (xiaomi.py) is fully covered by tests/test_xiaomi.py, including the login flow.
+omit = ["garmin_mcp_lite/login.py", "garmin_mcp_lite/xiaomi_login.py"]
 
 [tool.coverage.report]
 # Ratcheted from 85 after the suite reached 100%: the 5-point gap is headroom for

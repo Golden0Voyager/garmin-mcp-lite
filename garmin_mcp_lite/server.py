@@ -16,6 +16,7 @@ from garmin_mcp_lite.tools import (
     records,
     training,
     weekly_stats,
+    weight_sync,
     zones,
 )
 
@@ -52,6 +53,8 @@ mcp.add_tool(records.get_personal_records, name="garmin_personal_records")
 mcp.add_tool(zones.get_zones, name="garmin_zones")
 mcp.add_tool(body.get_body_composition, name="garmin_body_composition")
 mcp.add_tool(body.add_body_composition, name="garmin_add_body_composition")
+mcp.add_tool(weight_sync.sync_weight, name="garmin_sync_weight")
+
 
 def main():
     mcp.run()

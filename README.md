@@ -19,11 +19,11 @@
 
 A lightweight Garmin Model Context Protocol (MCP) server, designed specifically for endurance athletes.
 
-It exposes **17 precisely-curated endpoints** for deep analysis of running, cycling, swimming, and health data — replacing bulky 80+ endpoint alternatives with a clean, focused toolset.
+It exposes **18 precisely-curated endpoints** for deep analysis of running, cycling, swimming, and health data — replacing bulky 80+ endpoint alternatives with a clean, focused toolset.
 
-16 of them read. One (`garmin_add_body_composition`) writes, because Garmin has no way to accept weight data from a third-party scale.
+16 of them read. Two write: `garmin_add_body_composition` for a single manual weigh-in, and `garmin_sync_weight` to pull them from a Xiaomi body-fat scale — Garmin has no way to accept weight data from a third-party scale.
 
-## Core Tools (17)
+## Core Tools (18)
 
 ### 🏃 Activity & Training
 
@@ -52,6 +52,7 @@ It exposes **17 precisely-curated endpoints** for deep analysis of running, cycl
 |:---|:---|
 | `garmin_body_composition` | Weight and body-composition history: weight, BMI, body fat %, body water %, muscle mass, bone mass, visceral fat, metabolic age. Mass is normalised to kilograms and unmeasured fields are omitted. |
 | `garmin_add_body_composition` | **Write** one measurement (weight required, everything else optional). Uploads a FIT body-composition file — the same channel Garmin's own Index scale uses. |
+| `garmin_sync_weight` | **Write** weigh-ins from a Xiaomi body-fat scale into Garmin. Only days Garmin does not already have are written, so it is idempotent. Needs a one-time `garmin-mcp-lite-xiaomi-login`. |
 
 > **`garmin_add_body_composition` writes to your Garmin account.** There is no undo through this tool. Garmin keeps every entry, so calling it twice for the same day can leave two weigh-ins; the response warns you when that day already had one. `weight` is in **kilograms** — values above 500 are rejected as an accidental gram value, because the read tool returns grams at the API level and a read-modify-write is the obvious way to get this wrong. Garmin's upload endpoint does not always report a status, so the tool reads the day back and returns `verified: true` only when the stored weight matches what it sent.
 
@@ -191,7 +192,30 @@ printf '%s\n' \
  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | garmin-mcp-lite
 ```
 
-Expect a `serverInfo` line reporting this package's version, followed by all 15 tools.
+Expect a `serverInfo` line reporting this package's version, followed by all 18 tools.
+
+## Syncing a Xiaomi Body-Fat Scale
+
+`garmin_sync_weight` copies weigh-ins from Mi Fitness (小米运动健康) into Garmin, filling only the days Garmin does not already have. There is no scheduler and nothing to keep running: call it when you feel like it, and a week of missed days catches up in one go.
+
+```bash
+garmin-mcp-lite-xiaomi-login        # once: logs in and reports what the cloud holds
+```
+
+Logging in needs a captcha and possibly an SMS code, so it cannot be a tool call. Afterwards it prints the record count, the date range, the data source and the last five entries — if that says **0 records**, the scale is bound to Zepp Life instead, whose data lives in a different cloud with a different API, and this tool cannot read it.
+
+Then ask your assistant:
+
+> sync my weight from the Xiaomi scale (dry run first)
+
+`dry_run=true` reports what would be written and writes nothing. Real runs write each day as a FIT body-composition file, the same channel a Garmin Index scale uses, and confirm each one by reading the day back.
+
+Two details worth knowing:
+
+- **Only the earliest weigh-in of a day is used.** Morning, fasted weight is the one a trend line is about; later ones are reported as collapsed.
+- **A re-run writes nothing.** Days Garmin already has are skipped, so a repeat call after a crash or a double-click is harmless.
+
+The Xiaomi token is cached at `~/.garmin-mcp-lite/xiaomi.json` (mode 600), next to the Garmin token. It expires when you change your Xiaomi password or trigger a security check — re-run the login command when that happens. Note that the token grants account-level access, so treat the file like a password.
 
 ## Example Queries
 
@@ -241,7 +265,7 @@ The suite is at 100% statement coverage across every module, including the
 names, so a rename or a dropped `add_tool()` call fails a test instead of
 silently disappearing from a client's `tools/list`.
 
-There is also a live end-to-end script that walks all 15 tools against your own
+There is also a live end-to-end script that walks all 18 tools against your own
 account (needs a login token):
 
 ```bash
@@ -261,7 +285,7 @@ python test_e2e.py
 | Health Depth | Basic | SpO2, respiration, intensity minutes, steps |
 | Race/Challenge | No | Events calendar + challenge progress |
 | Write Ops | Heavy (weight/nutrition/gear) | Read-only |
-| Schema cost | High | ~2.3k tokens for all 15 tools |
+| Schema cost | High | ~2.3k tokens for all 18 tools |
 
 ## Changelog
 
@@ -272,8 +296,15 @@ python test_e2e.py
   body-composition file, the same channel the Garmin Index scale uses. Weights above
   500 kg are rejected as an accidental gram value, and the response warns when the
   day already had an entry.
+- New: `garmin_sync_weight` — pulls weigh-ins from a Xiaomi body-fat scale into Garmin.
+  Only days Garmin lacks are written, so it is idempotent. Adds
+  `garmin_mcp_lite.xiaomi`, a read-only client for Mi Fitness's private RC4/SHA1-signed
+  protocol (undocumented; reimplemented here so nothing beyond `requests` is needed),
+  and the `garmin-mcp-lite-xiaomi-login` console script for the one-time interactive
+  login that a captcha makes unavoidable.
 - `test_e2e.py` grew a `--write-test` flag; the write path is opt-in so a routine
-  end-to-end run never touches account data.
+  end-to-end run never touches account data. `garmin_sync_weight` runs in `dry_run`
+  mode by default there, and skips when no Xiaomi account is configured.
 
 ### 0.1.6
 - Fix: `garmin_events` crashed with `'NoneType' object has no attribute 'get'` on any
@@ -293,7 +324,7 @@ python test_e2e.py
   instead of omitted, so the 15 tool registrations are actually asserted.
 - Test: `tests/test_client.py` no longer reloads the client module, which is why
   CI had to skip it with `-k 'not test_get_client'`; that filter is gone.
-- Test: `test_e2e.py` covers all 15 tools (was 9) and keeps going after a failure
+- Test: `test_e2e.py` covers all 18 tools (was 9) and keeps going after a failure
   so one broken tool does not hide the rest.
 - Repackage: the 0.1.5 sdist accidentally shipped a local notes file.
 

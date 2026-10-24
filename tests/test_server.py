@@ -36,6 +36,7 @@ EXPECTED_TOOLS: dict[str, tuple[str, str]] = {
     "garmin_zones": ("zones", "get_zones"),
     "garmin_body_composition": ("body", "get_body_composition"),
     "garmin_add_body_composition": ("body", "add_body_composition"),
+    "garmin_sync_weight": ("weight_sync", "sync_weight"),
 }
 
 
