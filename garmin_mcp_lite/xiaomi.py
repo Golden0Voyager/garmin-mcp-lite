@@ -35,6 +35,7 @@ from datetime import datetime, timedelta
 from email.utils import mktime_tz, parsedate_tz
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
 
@@ -117,6 +118,37 @@ def save_token(token: dict[str, str]) -> Path:
     return TOKEN_PATH
 
 
+def _cookie_dict(jar: Any, prefer_domain: str = "") -> dict[str, str]:
+    """Flatten a cookie jar, tolerating the same name on several domains.
+
+    Xiaomi sets `cUserId` on both the account domain and the sts callback domain,
+    and both `dict(jar)` and `jar[name]` raise `CookieConflictError` for that —
+    which is exactly what happened the first time a real 2FA login reached this
+    code. Iterating yields `Cookie` objects, so there is no such check.
+
+    When a name repeats, the value whose domain matches the callback wins: that
+    is the service being authenticated to, so it holds the useful value.
+    """
+    chosen: dict[str, tuple[str, str]] = {}
+    for cookie in jar:
+        name = str(getattr(cookie, "name", "") or "")
+        if not name:
+            continue
+        value = str(getattr(cookie, "value", "") or "")
+        domain = str(getattr(cookie, "domain", "") or "")
+
+        current = chosen.get(name)
+        replace = current is None
+        if current is not None:
+            current_domain, current_value = current
+            better_domain = bool(prefer_domain) and prefer_domain in domain and prefer_domain not in current_domain
+            if better_domain or (not current_value and value):
+                replace = True
+        if replace:
+            chosen[name] = (domain, value)
+    return {name: value for name, (_domain, value) in chosen.items()}
+
+
 class MiLogin:
     """Interactive account login, including captcha and SMS/email 2FA.
 
@@ -177,15 +209,17 @@ class MiLogin:
                 )
             raise XiaomiError(f"Login response has no usable location: {payload}")
 
+        # The callback host decides which duplicate cookie is the useful one.
+        prefer_domain = urlparse(location).hostname or ""
         r = self.session.get(location, timeout=30)
         merged = dict(payload)
         # userId / passToken arrive on any hop of the redirect chain, either as
         # a cookie or inside the extension-pragma header.
         for hop in r.history:
-            merged.update(dict(hop.cookies))
+            merged.update(_cookie_dict(hop.cookies, prefer_domain))
             if pragma := hop.headers.get("extension-pragma"):
                 merged.update(json.loads(pragma))
-        merged.update(dict(r.cookies))
+        merged.update(_cookie_dict(r.cookies, prefer_domain))
 
         if not merged.get("ssecurity"):
             raise XiaomiError(f"Login response has no ssecurity; got keys {sorted(merged)}")
@@ -202,7 +236,10 @@ class MiLogin:
         r = self.session.get(url, timeout=30)
         flag = _parse_auth(r.content)["flag"]
         key = "Phone" if flag == FLAG_PHONE else "Email"
-        session_id = r.cookies["identity_session"]
+        # Indexing a jar raises CookieConflictError when the name repeats.
+        session_id = _cookie_dict(r.cookies).get("identity_session", "")
+        if not session_id:
+            raise XiaomiError("Xiaomi did not hand back an identity_session cookie for 2FA.")
 
         r = self.session.get(
             f"{ACCOUNT_URL}/identity/auth/verify{key}",

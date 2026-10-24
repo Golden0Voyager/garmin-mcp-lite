@@ -17,9 +17,11 @@ import shutil
 import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from requests.cookies import RequestsCookieJar
 
 from garmin_mcp_lite import xiaomi
 
@@ -53,8 +55,16 @@ class FakeResponse:
         self.status_code = status_code
         self.headers = headers or {}
         self.content = text.encode()
-        self.cookies: dict = {}
+        self.cookies = _jar()
         self.history: list = []
+
+
+def _jar(**cookies: str) -> RequestsCookieJar:
+    """A real RequestsCookieJar, so duplicate-name behaviour matches production."""
+    jar = RequestsCookieJar()
+    for name, value in cookies.items():
+        jar.set(name, value, domain=".xiaomi.com", path="/")
+    return jar
 
 
 class FakeSession:
@@ -458,6 +468,39 @@ class TestServiceLogin:
         assert login.session.post.call_args[1]["cookies"]["ick"] == "the-ick"
 
 
+class TestCookieDict:
+    """`dict(jar)` raises CookieConflictError when a name repeats, which is
+    exactly what a real 2FA login hit: Xiaomi sets `cUserId` on both the account
+    domain and the sts callback domain."""
+
+    def test_survives_a_name_present_on_two_domains(self) -> None:
+        jar = RequestsCookieJar()
+        jar.set("cUserId", "stale", domain=".xiaomi.com", path="/")
+        jar.set("cUserId", "fresh", domain="sts-hlth.io.mi.com", path="/")
+        jar.set("passToken", "pt", domain=".xiaomi.com", path="/")
+
+        assert xiaomi._cookie_dict(jar) == {"cUserId": "stale", "passToken": "pt"}
+
+    def test_prefers_the_callback_domain(self) -> None:
+        jar = RequestsCookieJar()
+        jar.set("cUserId", "stale", domain=".xiaomi.com", path="/")
+        jar.set("cUserId", "fresh", domain="sts-hlth.io.mi.com", path="/")
+
+        assert xiaomi._cookie_dict(jar, "sts-hlth.io.mi.com")["cUserId"] == "fresh"
+
+    def test_falls_back_to_a_non_empty_value(self) -> None:
+        jar = RequestsCookieJar()
+        jar.set("token", "", domain=".xiaomi.com", path="/")
+        jar.set("token", "real", domain=".xiaomi.com", path="/")
+
+        assert xiaomi._cookie_dict(jar)["token"] == "real"
+
+    def test_ignores_entries_without_a_name(self) -> None:
+        nameless = [SimpleNamespace(name="", value="v", domain="d")]
+
+        assert xiaomi._cookie_dict(nameless) == {}
+
+
 class TestLogin:
     def _login(self) -> xiaomi.MiLogin:
         login = xiaomi.MiLogin()
@@ -474,7 +517,7 @@ class TestLogin:
             ]
         )
         login.session.get.return_value = FakeResponse("ok", headers={})
-        login.session.get.return_value.cookies = {}
+        login.session.get.return_value.cookies = _jar()
         login.session.get.return_value.history = []
         login._credentials = MagicMock(return_value=_token())
 
@@ -504,10 +547,10 @@ class TestLogin:
     def test_credentials_follow_the_redirect_chain(self) -> None:
         login = self._login()
         hop = MagicMock()
-        hop.cookies = {}
+        hop.cookies = _jar()
         hop.headers = {"extension-pragma": json.dumps({"userId": "7", "passToken": "pt"})}
         final = FakeResponse("ok")
-        final.cookies = {}
+        final.cookies = _jar()
         final.history = [hop]
         login.session.get.return_value = final
 
@@ -533,6 +576,30 @@ class TestLogin:
         with pytest.raises(xiaomi.XiaomiError, match="code 70016.*登录验证失败"):
             login.login("user@example.com", "wrong-password", prompt=lambda _: "")
 
+    def test_credentials_survive_duplicate_cookie_names(self) -> None:
+        # Regression: the first real 2FA login died on dict(hop.cookies) because
+        # Xiaomi sets cUserId on two domains at once.
+        login = self._login()
+        jar = RequestsCookieJar()
+        jar.set("cUserId", "stale", domain=".xiaomi.com", path="/")
+        jar.set("cUserId", "fresh", domain="sts-hlth.io.mi.com", path="/")
+        final = FakeResponse("ok")
+        final.cookies = jar
+        final.history = []
+        login.session.get.return_value = final
+
+        token = login._credentials(
+            {
+                "location": "https://sts-hlth.io.mi.com/healthapp/sts",
+                "ssecurity": SSECURITY,
+                "userId": "42",
+                "passToken": "pt",
+            }
+        )
+
+        assert token["userId"] == "42"
+        assert token["passToken"] == "pt"
+
     def test_credentials_require_a_location(self) -> None:
         login = self._login()
 
@@ -542,7 +609,7 @@ class TestLogin:
     def test_credentials_require_ssecurity(self) -> None:
         login = self._login()
         final = FakeResponse("ok")
-        final.cookies = {}
+        final.cookies = _jar()
         final.history = []
         login.session.get.return_value = final
 
@@ -552,7 +619,7 @@ class TestLogin:
     def test_two_factor_uses_the_phone_flow(self) -> None:
         login = self._login()
         listing = FakeResponse('&&&START&&&{"flag":4}')
-        listing.cookies = {"identity_session": "sess"}
+        listing.cookies = _jar(identity_session="sess")
         verify = FakeResponse('&&&START&&&{"maskedPhone":"138****0000"}')
         sent = FakeResponse('&&&START&&&{"code":0}')
         login.session.get.side_effect = [listing, verify]
@@ -564,6 +631,15 @@ class TestLogin:
         assert token == _token()
         # sendPhoneTicket, not sendEmailTicket.
         assert "sendPhoneTicket" in login.session.post.call_args_list[0][0][0]
+
+    def test_two_factor_reports_a_missing_session_cookie(self) -> None:
+        login = self._login()
+        listing = FakeResponse('&&&START&&&{"flag":4}')
+        listing.cookies = _jar()
+        login.session.get.return_value = listing
+
+        with pytest.raises(xiaomi.XiaomiError, match="identity_session"):
+            login._two_factor("https://n/fe/service/identity/authStart", prompt=lambda _: "1")
 
     def test_show_captcha_writes_the_image(self, tmp_dir, monkeypatch) -> None:
         login = self._login()
