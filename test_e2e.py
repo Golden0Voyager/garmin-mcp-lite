@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""端到端测试脚本 —— 逐个验证 garmin-mcp-lite 暴露的全部 15 个工具。
+"""端到端测试脚本 —— 逐个验证 garmin-mcp-lite 暴露的工具。
+
+`garmin_sync_weight` 以 dry_run 模式执行：只读小米、只读 Garmin、不写入。
+`garmin_add_body_composition` 是唯一的真实写入工具，不在这里自动执行：它会真的
+往 Garmin 账号写数据。需要验证时单独用 `--write-test` 显式开启。
 
 每个步骤独立 try/except：单个工具失败不会中断后续检查，
 最后统一汇总。退出码非 0 表示至少有一个工具失败。
 
 用法（需要先登录）:
-    python test_e2e.py
+    python test_e2e.py                 # 只跑读取 + 干跑同步
+    python test_e2e.py --write-test    # 额外验证写入（会改动账号数据）
 """
 from __future__ import annotations
 
@@ -154,6 +159,61 @@ def check_personal_records() -> None:
         print(f"    - {r['type']}: {r['value']} ({r['date']})")
 
 
+def check_body_composition() -> None:
+    from garmin_mcp_lite.tools.body import get_body_composition
+
+    result = get_body_composition(days=400, limit=3)
+    if "error" in result:
+        raise RuntimeError(result["error"])
+    print(f"  记录数: {result['count']}（窗口 {result['range']['start']} ~ {result['range']['end']}）")
+    for record in result["records"]:
+        metrics = {k: v for k, v in record.items() if k not in ("date", "source")}
+        print(f"    {record['date']}: {metrics} ({record.get('source')})")
+    if result.get("change"):
+        c = result["change"]
+        print(f"  变化: {c['weight_kg']:+.2f} kg ({c['from']} -> {c['to']})")
+
+
+def check_add_body_composition() -> None:
+    """Write today's weight back to Garmin — only with --write-test."""
+    from garmin_mcp_lite.tools.body import add_body_composition, get_body_composition
+
+    current = get_body_composition(days=30, limit=1).get("latest") or {}
+    weight = current.get("weight_kg")
+    if not isinstance(weight, (int, float)):
+        raise RuntimeError("账号里没有可复用的体重，跳过写入验证")
+
+    print(f"  用最近一次的 {weight} kg 写回今天（会新增一条记录）")
+    result = add_body_composition(weight=weight)
+    if not result.get("written"):
+        raise RuntimeError(result.get("error") or "写入失败")
+    print(f"  written={result['written']} status={result.get('garmin_status')} date={result['date']}")
+    if result.get("warning"):
+        print(f"  ⚠️  {result['warning']}")
+
+
+
+def check_sync_weight() -> None:
+    """Dry-run the Xiaomi -> Garmin sync. Reads both sides, writes nothing."""
+    from garmin_mcp_lite.tools.weight_sync import sync_weight
+
+    result = sync_weight(days=7, dry_run=True)
+    if result.get("error"):
+        # Not having a Xiaomi account is a valid configuration, not a failure.
+        if "xiaomi-login" in result["error"]:
+            print("  未配置小米账号，跳过（不影响其他检查）")
+            return
+        raise RuntimeError(result["error"])
+
+    xiaomi = result["xiaomi"]
+    print(f"  小米侧 {xiaomi['weigh_ins']} 次称重 / {xiaomi['days']} 天（同一天折叠 {xiaomi['same_day_collapsed']} 次）")
+    print(f"  待写入 {len(result['written'])} 天 | Garmin 已有 {len(result['skipped'])} 天")
+    for item in result["written"][:5]:
+        print(f"    {item['date']}: {item['weight_kg']} kg")
+    if result.get("note"):
+        print(f"  注意: {result['note']}")
+
+
 def check_zones() -> None:
     from garmin_mcp_lite.tools.zones import get_zones
 
@@ -169,7 +229,18 @@ def check_zones() -> None:
         print(f"  乳酸阈值: {lt.get('heart_rate')} bpm | {lt.get('pace_per_km')}/km")
 
 
+def check_status() -> None:
+    from garmin_mcp_lite.tools.status import get_status
+
+    result = get_status()
+    garmin, xiaomi = result["garmin"], result["xiaomi"]
+    print(f"  Garmin: {'ok (' + garmin['account'] + ')' if garmin['ok'] else garmin['detail']}")
+    print(f"  Mi Fitness: {'ok' if xiaomi['ok'] else '未配置/已失效（仅 garmin_sync_weight 需要）'}")
+    assert result["ready"], "Garmin token 不可用，请先运行 garmin-mcp-lite-login"
+
+
 _STEPS = [
+    ("garmin_status", check_status),
     ("登录", check_login),
     ("garmin_activities", check_activities),
     ("garmin_activity_detail", check_activity_detail),
@@ -186,6 +257,8 @@ _STEPS = [
     ("garmin_race_prediction", check_race_prediction),
     ("garmin_personal_records", check_personal_records),
     ("garmin_zones", check_zones),
+    ("garmin_body_composition", check_body_composition),
+    ("garmin_sync_weight (dry run)", check_sync_weight),
 ]
 
 
@@ -194,10 +267,16 @@ def main() -> int:
     print("garmin-mcp-lite 端到端测试")
     print("=" * 50)
 
-    failures: list[str] = []
-    total = len(_STEPS)
+    steps = list(_STEPS)
+    if "--write-test" in sys.argv[1:]:
+        # Opt-in only: this appends a weigh-in to the real account.
+        steps.append(("garmin_add_body_composition", check_add_body_composition))
+        print("⚠️  已启用写入验证，会往账号新增一条今天的体重记录")
 
-    for index, (name, step) in enumerate(_STEPS, start=1):
+    failures: list[str] = []
+    total = len(steps)
+
+    for index, (name, step) in enumerate(steps, start=1):
         print(f"\n[{index}/{total}] 测试 {name} ...")
         try:
             step()

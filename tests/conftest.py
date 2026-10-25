@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 _TOOL_MODULES = [
+    # onboarding is not a tool module, but its probes call get_client(); the
+    # autouse patch keeps the garmin_status tool off the real token store.
+    "garmin_mcp_lite.onboarding",
     "garmin_mcp_lite.tools.activities",
+    "garmin_mcp_lite.tools.body",
     "garmin_mcp_lite.tools.health",
     "garmin_mcp_lite.tools.challenges",
     "garmin_mcp_lite.tools.coach",
@@ -118,18 +123,27 @@ def _build_fake() -> MagicMock:
     fake.get_devices.return_value = [{"deviceId": 123, "displayName": "My Fenix 7", "partNumber": "F7X-045-01", "currentFirmwareVersion": "28.10", "softwareUpdates": [], "deviceStatus": "ACTIVE", "primaryActivityTrackerIndicator": True, "primaryTrainingCapable": True, "registeredDate": 1700000000000, "connected": True}]
 
     # -- events --
+    def _day(offset: int) -> str:
+        return (datetime.now() + timedelta(days=offset)).strftime("%Y-%m-%d")
+
     def _fake_connectapi(path: str) -> list:
         if path == "/calendar-service/events":
             return [
                 {
-                    "eventName": "Tokyo Marathon", "date": "2027-03-07", "eventType": "running",
+                    # Already ran: the tool must drop it, not report it as upcoming.
+                    "eventName": "Spring 10K", "date": _day(-30), "eventType": "running",
+                    "completionTarget": None, "eventCustomization": None,
+                },
+                {
+                    # Returned out of order on purpose: the tool sorts soonest first.
+                    "eventName": "Tokyo Marathon", "date": _day(130), "eventType": "running",
                     "completionTarget": {"value": 42.195},
                     "eventCustomization": {"isPrimaryEvent": True, "customGoal": {"unitType": "time", "value": 14400}, "trainingPlanId": "plan_marathon"},
                 },
                 {
                     # Real shape for an event with no custom goal: both nested
                     # objects are explicit nulls, not absent keys.
-                    "eventName": "Local 10K", "date": "2026-11-01", "eventType": "running",
+                    "eventName": "Local 10K", "date": _day(8), "eventType": "running",
                     "completionTarget": None,
                     "eventCustomization": {"isPrimaryEvent": False, "customGoal": None, "trainingPlanId": None},
                 },
@@ -183,5 +197,46 @@ def _build_fake() -> MagicMock:
         "power": {"functionalThresholdPower": 404, "isStale": True},
     }
     fake.get_cycling_ftp.return_value = {"functionalThresholdPower": 194, "calendarDate": "2025-07-30T13:30:42.373", "isStale": True}
+
+    # -- body composition --
+    # Real shape: mass is in grams (69800.0 == 69.8 kg) and a scale that only
+    # syncs weight (sourceType MFP) leaves every other metric as an explicit null.
+    _body_rows = [
+        {
+            "calendarDate": "2025-09-20", "weight": 70200.0, "bmi": None, "bodyFat": None,
+            "bodyWater": None, "boneMass": None, "muscleMass": None, "physiqueRating": None,
+            "visceralFat": None, "metabolicAge": None, "sourceType": "MFP",
+        },
+        {
+            "calendarDate": "2025-09-26", "weight": 69800.0, "bmi": 22.1, "bodyFat": 18.4,
+            "bodyWater": 55.2, "boneMass": 3100.0, "muscleMass": 32100.0, "physiqueRating": 3,
+            "visceralFat": 8, "metabolicAge": 36, "sourceType": "INDEX_SCALE",
+        },
+    ]
+
+    def _fake_body_composition(startdate: str, enddate: str | None = None) -> dict:
+        # The write path asks for a single day to check for an existing entry;
+        # return nothing there so tests opt in to the duplicate case explicitly.
+        rows = [] if enddate == startdate else _body_rows
+        return {
+            "startDate": startdate,
+            "endDate": enddate,
+            "dateWeightList": rows,
+            "totalAverage": {
+                "from": 1758153600000, "until": 1792799999999, "weight": 70000.0,
+                "bmi": None, "bodyFat": None, "bodyWater": None, "boneMass": None,
+                "muscleMass": None, "physiqueRating": None, "visceralFat": None, "metabolicAge": None,
+            },
+        }
+
+    fake.get_body_composition.side_effect = _fake_body_composition
+    fake.add_body_composition.return_value = {
+        "detailedImportResult": {
+            "uploadId": 987654,
+            "uploads": [{"status": "SUCCESS", "fileType": "FIT"}],
+            "successes": [],
+            "failures": [],
+        }
+    }
 
     return fake
