@@ -69,7 +69,7 @@ def get_activity_detail(activity_id: int, fields: list[str] | None = None) -> di
     Args:
         activity_id: The Garmin activity ID.
         fields: Optional list of extra data sections to include.
-                Supported values: "splits", "hrZones", "laps", "gps".
+                Supported values: "splits", "hrZones", "laps".
                 Omit to return the basic summary only.
     """
     client = get_client()

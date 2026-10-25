@@ -1,4 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
+from typing import Any
 
 from garmin_mcp_lite.client import get_client
 from garmin_mcp_lite.tools._common import (
@@ -100,12 +102,24 @@ def get_training_plan(date: str | None = None) -> dict:
     }
 
 
+def _readiness_for_day(client: Any, day: str) -> list[Any]:
+    """One day's training-readiness entries; empty when the API has nothing."""
+    try:
+        entries = client.get_training_readiness(day)
+        return entries if isinstance(entries, list) else []
+    except Exception:
+        return []
+
+
 def get_training_status() -> dict:
     """Get current training status summary.
 
     Returns training status label, VO2Max, acute training load, load focus
     distribution (aerobic_low / aerobic_high / anaerobic), recovery time,
     training readiness score, and sleep score.
+
+    Cost: ~10 API requests — the readiness scan covers 7 days (in parallel)
+    because Garmin exposes it one day at a time.
     """
     client = get_client()
     today = today_str()
@@ -196,14 +210,10 @@ def get_training_status() -> dict:
     # latest timestamp to avoid stale data overriding fresh data.
     readiness = {}
     readiness_candidates = []
-    for i in range(7):  # check the last 7 days
-        check_date = (datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d")
-        try:
-            readiness_list = client.get_training_readiness(check_date)
-            if isinstance(readiness_list, list):
-                readiness_candidates.extend(readiness_list)
-        except Exception:
-            pass
+    scan_days = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
+    with ThreadPoolExecutor(max_workers=len(scan_days)) as pool:
+        for entries in pool.map(lambda day: _readiness_for_day(client, day), scan_days):
+            readiness_candidates.extend(entries)
     if readiness_candidates:
         # Sort by timestampLocal descending, pick the most recent entry
         def _ts(r):

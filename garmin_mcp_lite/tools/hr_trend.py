@@ -1,7 +1,34 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Any, Literal
 
 from garmin_mcp_lite.client import get_client
+
+# Garmin has no bulk endpoint for resting HR, so a trend costs one request per
+# day (two for days without a readiness entry). Serial, a 90-day window is
+# minutes of waiting and invites a 429; six workers keep it to seconds. The
+# shared client is safe to read through: auth travels in headers, not cookies,
+# and urllib3's connection pool is thread-safe.
+_FETCH_WORKERS = 6
+
+
+def _resting_hr(client: Any, day: str) -> int | None:
+    """One day's resting HR: training readiness first, daily summary as fallback."""
+    try:
+        readiness = client.get_training_readiness(day)
+        if isinstance(readiness, list) and readiness:
+            rhr = readiness[0].get("restingHeartRate")
+            if rhr:
+                return int(rhr)
+    except Exception:
+        pass
+    try:
+        rhr = client.get_user_summary(day).get("restingHeartRate")
+        if rhr:
+            return int(rhr)
+    except Exception:
+        pass
+    return None
 
 
 def get_hr_trend(
@@ -11,6 +38,9 @@ def get_hr_trend(
 
     Args:
         period: Time window. One of: "7d" (7 days), "30d" (30 days), "90d" (90 days).
+                Cost: one API request per day in the window (plus one more for
+                days without a readiness entry), fetched six at a time — a 90d
+                scan takes seconds, not minutes, but is still ~90 requests.
     """
     client = get_client()
 
@@ -19,44 +49,17 @@ def get_hr_trend(
     end = datetime.now()
     start = end - timedelta(days=days)
 
-    raw_rows: list[dict] = []
-    for i in range(days):
-        check_date = (end - timedelta(days=i)).strftime("%Y-%m-%d")
-        rhr = None
-        try:
-            # Method 1: via training readiness
-            readiness_list = client.get_training_readiness(check_date)
-            if isinstance(readiness_list, list) and readiness_list:
-                rhr = readiness_list[0].get("restingHeartRate")
-        except Exception:
-            pass
+    scan_dates = [(end - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(days)]
+    with ThreadPoolExecutor(max_workers=_FETCH_WORKERS) as pool:
+        per_day = list(pool.map(lambda day: (day, _resting_hr(client, day)), scan_dates))
 
-        if not rhr:
-            try:
-                # Method 2: via daily summary (more universal)
-                summary = client.get_user_summary(check_date)
-                rhr = summary.get("restingHeartRate")
-            except Exception:
-                pass
-
-        if rhr:
-            raw_rows.append({"date": check_date, "value": int(rhr)})
-
-    # Aggregate by date and sort to ensure stable 'latest' semantics
-    by_date: dict[str, list[int]] = {}
-    for row in raw_rows:
-        by_date.setdefault(row["date"], []).append(row["value"])
-
-    # Annotated: without it mypy infers list[dict[str, object]] (the join of the str
-    # date and the rounded float), which breaks the sort key, sum(), min() and max().
-    hr_data: list[dict[str, Any]] = [
-        {"date": date, "value": round(sum(values) / len(values), 1)}
-        for date, values in by_date.items()
+    hr_data = [
+        {"date": day, "value": value}
+        for day, value in sorted(per_day, key=lambda pair: pair[0], reverse=True)
+        if value
     ]
-    hr_data.sort(key=lambda x: x["date"], reverse=True)
 
-    # Compute summary statistics
-    values = [d["value"] for d in hr_data if d["value"]]
+    values = [d["value"] for d in hr_data]
     return {
         "period": period,
         "metric": "resting",
