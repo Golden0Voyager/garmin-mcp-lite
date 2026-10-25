@@ -5,9 +5,10 @@
 > 你当前正在连接一个 Garmin MCP (Model Context Protocol) 服务器。
 > 1. **数据新鲜度**：当用户询问其最近的运动或健康指标时，务必主动调用接口获取最新数据，不要使用陈旧上下文。
 > 2. **参数调优**：在调用 `garmin_activity_detail` 等工具时，使用 `fields` 参数来限制返回的载荷大小，以节省上下文窗口（例如：`["splits", "hrZones"]`）。
-> 3. **只读权限**：此服务器仅提供对 Garmin Connect 的只读访问权限。你无法修改或写入用户的任何数据。
+> 3. **大部分只读**：17 个工具只读；两个会写入体重数据（`garmin_add_body_composition`、`garmin_sync_weight`）。调用前先和用户确认数字，同步先用 `dry_run=true` 试跑 —— 写入无法撤销。
 > 4. **禁止索要密码**：绝对不要向用户索要他们的 Garmin 密码。身份验证已在外部通过本地 Token 安全完成。
 > 5. **区间解读**：`garmin_activity_detail` 返回的心率区间只有秒数、没有边界。判断强度前先调用 `garmin_zones` 拿到各区间 bpm 范围。
+> 6. **状态自检**：`garmin_status` 报告一次性登录（Garmin 必需，小米可选）是否有效，并给出失效时要跑的确切命令。排查任何认证问题前先调它。
 <!-- AI CONTEXT END -->
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -18,18 +19,24 @@
 
 精简版 Garmin MCP 服务器，专为耐力运动爱好者设计。
 
-提取了进行深度运动数据分析最核心的 18 个接口（涵盖跑步、骑行、游泳、健康及体成分数据），完美替代臃肿的 80+ 接口方案。
+提取了进行深度运动数据分析最核心的 19 个接口（涵盖跑步、骑行、游泳、健康及体成分数据），完美替代臃肿的 80+ 接口方案。
 
-其中 16 个是只读，两个会写入：`garmin_add_body_composition` 记一条手动体重，`garmin_sync_weight` 从小米体脂秤拉取 —— 因为 Garmin 没有接收第三方体重秤数据的入口。
+其中 17 个是只读，两个会写入：`garmin_add_body_composition` 记一条手动体重，`garmin_sync_weight` 从小米体脂秤拉取 —— 因为 Garmin 没有接收第三方体重秤数据的入口。
 
-## 核心工具（18 个替代 80+）
+## 核心工具（19 个替代 80+）
+
+### 🔧 状态自检
+
+| 工具 | 功能 |
+|:---|:---|
+| `garmin_status` | 检查两个一次性登录（Garmin 必需、小米可选）是否就位且有效，缺失或失效时给出下一步要跑的确切命令 |
 
 ### 🏃 活动与训练
 
 | 工具 | 功能 |
 |:---|:---|
 | `garmin_activities` | 查跑步/骑行/游泳/潜水记录，支持日期/类型筛选 |
-| `garmin_activity_detail` | 单次活动详情（配速、心率区间、分段、GPS 等） |
+| `garmin_activity_detail` | 单次活动详情（配速、心率区间、分段、圈数） |
 | `garmin_training_plan` | 今日/指定日期训练课表 |
 | `garmin_training_status` | 训练状态、VO2Max、**急性负荷**、**负荷分布**、恢复时间、训练准备度 |
 | `garmin_weekly_stats` | 周/月/年训练总量统计 |
@@ -59,7 +66,7 @@
 
 | 工具 | 功能 |
 |:---|:---|
-| `garmin_events` | 赛事日历：比赛日期、目标距离、目标完赛时间 |
+| `garmin_events` | 赛事日历：仅未来的比赛（按日期升序），目标距离、目标完赛时间 |
 | `garmin_challenges` | 进行中的挑战：虚拟攀登、月度徽章及完成度 |
 
 ### ⌚ 设备与装备
@@ -104,6 +111,8 @@ GARMIN_EMAIL="你的邮箱" GARMIN_PASSWORD="你的密码" garmin-mcp-lite-login
 *(💡 **国内用户注意**：如果使用的是佳明中国区账号（garmin.cn），命令前加上 `GARMIN_IS_CN=true`。)*
 
 Token 默认写入 `~/.garmin-mcp-lite/garmin_tokens.json`。需要多账号或多客户端隔离时，用 `GARMIN_TOKEN_DIR` 指定别的目录。
+
+想一条命令引导完成？`garmin-mcp-lite-setup` 会依次检查两个登录 —— 先 Garmin，再（仅当你用小米秤时）Mi Fitness —— 缺什么就带你补什么。
 
 ### 3. 配置 AI 助手
 
@@ -191,7 +200,7 @@ printf '%s\n' \
  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | garmin-mcp-lite
 ```
 
-正常情况下会返回 `serverInfo`（版本号为本包版本）和全部 18 个工具。
+正常情况下会返回 `serverInfo`（版本号为本包版本）和全部 19 个工具。
 
 ## 同步小米体脂秤
 
@@ -209,10 +218,14 @@ garmin-mcp-lite-xiaomi-login        # 只此一次：登录并报告云端有什
 
 `dry_run=true` 只报告会写什么，不实际写。真正执行时，每一天都会以 FIT 体成分文件上传（与 Garmin Index 秤同一条通道），并回读当天记录确认写入成功。
 
-两个细节：
+几个值得知道的细节：
 
 - **一天只取最早那次。** 早晨空腹体重才是趋势线要的东西，当天其余几次会被折叠并计数。
 - **重复执行不会写重复。** Garmin 已有的天直接跳过，所以误触、重试都无害。
+- **不合理的体重会被拒绝写入。** Garmin 的记录永不删除，所以写入前会先校验：窗口内已有 ≥3 条 Garmin 体重时，偏离中位数 ±40% 以上的直接跳过（斤恰好是千克的 2 倍，正中这条规则）；没有 Garmin 历史时，30–250 kg 之外的一律跳过。被拒的天会连同原因列出 —— 确属真实数据的话，用 `garmin_add_body_composition` 手动写入即可。
+- **在小米侧删除记录不会同步删除 Garmin 的。** 本工具没有删除通道，多余记录请去 Garmin Connect App 手动删除。
+- **写入之间有 0.5 秒间隔。** 首次补 90 天约 90 次上传，不加间隔会被 Garmin 用 429 拒绝（进而锁 IP 数小时）。
+- **写入后无法回读验证会触发 `warning`。** 每次写入都会回读当天确认；如果反复出现不可验证，多半是运行本服务的机器与 Garmin 账号时区不一致，可能累积重复记录 —— 先对齐时区再继续同步。
 
 小米 token 缓存在 `~/.garmin-mcp-lite/xiaomi.json`（权限 600），与 Garmin token 同目录。改密码、触发安全校验或长期不用都会让它失效，重新跑一次上面的命令即可。注意该 token 具备账号级权限，请当密码一样保管。
 
@@ -259,11 +272,11 @@ uv run pytest --cov tests/
 python3 scripts/smoke_wheel_install.py
 ```
 
-当前语句覆盖率 100%，包含 `server.py` 里的 18 个工具注册表。
+当前语句覆盖率 100%，包含 `server.py` 里的 19 个工具注册表。
 `tests/test_server.py` 把工具名逐个钉死了，改名或漏注册会直接测试失败，
 而不是悄悄从客户端的 `tools/list` 里消失。
 
-另有一个跑真实账号的端到端脚本，会把 18 个工具全部走一遍（需要先登录）：
+另有一个跑真实账号的端到端脚本，会把 19 个工具全部走一遍（需要先登录）：
 
 ```bash
 python test_e2e.py
@@ -280,9 +293,24 @@ python test_e2e.py
 | 心率区间 | 无 | 区间边界 + 乳酸阈值 + FTP |
 | 健康深度 | 基础 | 血氧、呼吸、强度分钟、步数 |
 | 写操作 | 大量（体重/营养/装备） | 仅读 |
-| Schema 开销 | 高 | 18 个工具共约 2.3k tokens |
+| Schema 开销 | 高 | 19 个工具共约 2.4k tokens |
 
 ## 变更记录
+
+### 0.1.8
+- 新增 `garmin_status`：报告两个一次性登录（Garmin、小米）是否就位且有效，失效时给出
+  要跑的确切命令。`ready` 只看 Garmin 侧 —— 没有小米秤的用户缺少小米 token 是正常配置。
+- 新增 `garmin-mcp-lite-setup`：一条命令引导完成两个登录：先 Garmin（环境变量或交互输入），
+  再一个可选、可跳过的 Mi Fitness 登录。
+- 同步加固（`garmin_sync_weight`）：写入前校验体重的合理性（有 ≥3 条 Garmin 记录时，
+  偏离中位数 ±40% 即拒绝 —— 斤恰好是千克的 2 倍；无历史时按 30–250 kg 绝对范围）；
+  写入间隔 0.5 秒，首次 90 天回填不会触发 Garmin 限流；写入后无法回读验证时给出
+  时区不一致警告；被跳过的天会附带原因。
+- 小米客户端加固：分页超过 200 页即报错，不再被失控游标挂死；13 位毫秒时间戳自动折算为秒。
+- 修复：`garmin_hr_trend` 原来逐天串行请求（90 天要等数分钟且极易触发限流），改为 6 路并行；
+  `garmin_training_status` 的 7 天准备度扫描同样并行。
+- 修复：`garmin_events` 文档承诺"即将到来"却返回整个日历（含已结束赛事），现在会过滤并按日期升序。
+- 修复：`garmin_activity_detail` 的 `fields` 文档里列了从未实现的 `"gps"`，已移除。
 
 ### 0.1.7
 - 新增 `garmin_body_composition`：体重/BMI/体脂率/肌肉量历史。Garmin 返回的质量单位是克，

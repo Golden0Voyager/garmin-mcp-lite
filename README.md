@@ -5,10 +5,11 @@
 > You are interfacing with a Garmin MCP (Model Context Protocol) server. 
 > 1. **Data Freshness**: Always query the data if the user asks about their recent workouts or health metrics.
 > 2. **Parameter Tuning**: Use the `fields` parameter in tools like `garmin_activity_detail` to limit the response payload and save context window (e.g., `["splits", "hrZones"]`).
-> 3. **Read-Only**: This server provides read-only access to Garmin Connect. You cannot modify user data.
+> 3. **Mostly Read-Only**: 17 tools read. Two write weight data (`garmin_add_body_composition`, `garmin_sync_weight`): confirm the numbers with the user before calling, and prefer `dry_run=true` for the sync — there is no undo.
 > 4. **No Password Request**: Never ask the user for their Garmin password. Authentication is handled out-of-band via a local token.
 > 5. **Health Tip**: `garmin_health` now supports a `metric` parameter — use `"steps"`, `"sleep"`, `"hrv"`, `"spo2"`, `"body_battery"`, etc., to query specific data and save context window.
 > 6. **Zone Context**: `garmin_activity_detail` returns seconds per heart rate zone but no boundaries. Call `garmin_zones` first to get the bpm ranges before judging intensity.
+> 7. **Setup Check**: `garmin_status` reports whether the one-time logins (Garmin required, Mi Fitness optional) are valid and, when not, the exact command to run next. Call it before troubleshooting anything auth-related.
 <!-- AI CONTEXT END -->
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -19,18 +20,24 @@
 
 A lightweight Garmin Model Context Protocol (MCP) server, designed specifically for endurance athletes.
 
-It exposes **18 precisely-curated endpoints** for deep analysis of running, cycling, swimming, and health data — replacing bulky 80+ endpoint alternatives with a clean, focused toolset.
+It exposes **19 precisely-curated endpoints** for deep analysis of running, cycling, swimming, and health data — replacing bulky 80+ endpoint alternatives with a clean, focused toolset.
 
-16 of them read. Two write: `garmin_add_body_composition` for a single manual weigh-in, and `garmin_sync_weight` to pull them from a Xiaomi body-fat scale — Garmin has no way to accept weight data from a third-party scale.
+17 of them read. Two write: `garmin_add_body_composition` for a single manual weigh-in, and `garmin_sync_weight` to pull them from a Xiaomi body-fat scale — Garmin has no way to accept weight data from a third-party scale.
 
-## Core Tools (18)
+## Core Tools (19)
+
+### 🔧 Setup & Diagnosis
+
+| Tool | Functionality |
+|:---|:---|
+| `garmin_status` | Check both one-time logins (Garmin required, Mi Fitness optional) and report the exact command to run next when something is missing or expired. |
 
 ### 🏃 Activity & Training
 
 | Tool | Functionality |
 |:---|:---|
 | `garmin_activities` | List running/cycling/swimming/diving records with date & type filters. |
-| `garmin_activity_detail` | Get single activity details (pace, heart rate zones, splits, GPS, etc.). |
+| `garmin_activity_detail` | Get single activity details (pace, heart rate zones, splits, laps). |
 | `garmin_training_plan` | Get today's or a specific date's scheduled training workout. |
 | `garmin_training_status` | Get training status, VO2Max, **acute load**, **load focus distribution** (aerobic/anaerobic), recovery time, and training readiness score. |
 | `garmin_weekly_stats` | Get weekly/monthly/yearly training volume statistics. |
@@ -60,7 +67,7 @@ It exposes **18 precisely-curated endpoints** for deep analysis of running, cycl
 
 | Tool | Functionality |
 |:---|:---|
-| `garmin_events` | Get your race calendar: upcoming race dates, target distances, and **goal finish times**. |
+| `garmin_events` | Get your upcoming race calendar: race dates (soonest first, past events excluded), target distances, and **goal finish times**. |
 | `garmin_challenges` | Get in-progress challenges: virtual climbs, monthly badge challenges, and their completion percentages. |
 
 ### ⌚ Device & Gear
@@ -105,6 +112,8 @@ GARMIN_EMAIL="your@email.com" GARMIN_PASSWORD="your_password" garmin-mcp-lite-lo
 *(💡 **China Region Users**: if your account is registered with Garmin China (garmin.cn), prefix the command with `GARMIN_IS_CN=true`.)*
 
 The token is written to `~/.garmin-mcp-lite/garmin_tokens.json`. Set `GARMIN_TOKEN_DIR` to keep several clients or accounts on separate sessions.
+
+Prefer one guided command? `garmin-mcp-lite-setup` checks both logins — Garmin, and (only if you use a Xiaomi scale) Mi Fitness — and walks you through whatever is missing.
 
 ### 3. Configure Your AI Assistant
 
@@ -192,7 +201,7 @@ printf '%s\n' \
  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | garmin-mcp-lite
 ```
 
-Expect a `serverInfo` line reporting this package's version, followed by all 18 tools.
+Expect a `serverInfo` line reporting this package's version, followed by all 19 tools.
 
 ## Syncing a Xiaomi Body-Fat Scale
 
@@ -210,10 +219,14 @@ Then ask your assistant:
 
 `dry_run=true` reports what would be written and writes nothing. Real runs write each day as a FIT body-composition file, the same channel a Garmin Index scale uses, and confirm each one by reading the day back.
 
-Two details worth knowing:
+Details worth knowing:
 
 - **Only the earliest weigh-in of a day is used.** Morning, fasted weight is the one a trend line is about; later ones are reported as collapsed.
 - **A re-run writes nothing.** Days Garmin already has are skipped, so a repeat call after a crash or a double-click is harmless.
+- **Implausible weights are refused.** Garmin keeps every entry forever, so before writing, each weight is checked: with ≥3 Garmin weigh-ins inside the window, anything more than ±40% off their median is skipped (a 斤 mis-read is exactly 2× kg); without Garmin history, weights outside 30–250 kg are skipped. Refusals are listed with the reason — write one deliberately with `garmin_add_body_composition` if it was genuine.
+- **Deleting a weigh-in in Mi Fitness does not delete it from Garmin.** There is no delete path here; remove stray entries in the Garmin Connect app.
+- **Writes are paced 0.5 s apart.** A first 90-day backfill is ~90 uploads; without the pause Garmin answers the burst with a 429 (which then locks the IP for hours).
+- **A `warning` about unverifiable writes means timezone trouble.** Each write is confirmed by reading the day back; if writes keep coming back unverifiable, the machine running this server likely has a different timezone than the Garmin account, and duplicates may accumulate — align the timezones before syncing again.
 
 The Xiaomi token is cached at `~/.garmin-mcp-lite/xiaomi.json` (mode 600), next to the Garmin token. It expires when you change your Xiaomi password or trigger a security check — re-run the login command when that happens. Note that the token grants account-level access, so treat the file like a password.
 
@@ -261,11 +274,11 @@ python3 scripts/smoke_wheel_install.py
 ```
 
 The suite is at 100% statement coverage across every module, including the
-15-tool registry in `server.py`. `tests/test_server.py` pins the exact tool
+19-tool registry in `server.py`. `tests/test_server.py` pins the exact tool
 names, so a rename or a dropped `add_tool()` call fails a test instead of
 silently disappearing from a client's `tools/list`.
 
-There is also a live end-to-end script that walks all 18 tools against your own
+There is also a live end-to-end script that walks all 19 tools against your own
 account (needs a login token):
 
 ```bash
@@ -285,9 +298,31 @@ python test_e2e.py
 | Health Depth | Basic | SpO2, respiration, intensity minutes, steps |
 | Race/Challenge | No | Events calendar + challenge progress |
 | Write Ops | Heavy (weight/nutrition/gear) | Read-only |
-| Schema cost | High | ~2.3k tokens for all 18 tools |
+| Schema cost | High | ~2.4k tokens for all 19 tools |
 
 ## Changelog
+
+### 0.1.8
+- New: `garmin_status` — reports whether the one-time logins (Garmin, Mi Fitness)
+  are in place and still valid, and names the exact command to run next. `ready`
+  reflects the Garmin side only: a missing Xiaomi token is a valid configuration
+  for anyone without the scale.
+- New: `garmin-mcp-lite-setup` — one guided command for both logins: Garmin first
+  (env vars or interactive prompt), then an optional, skippable Mi Fitness login.
+- Sync hardening (`garmin_sync_weight`): implausible weights are refused before
+  writing (±40% off the recent Garmin median with ≥3 points — a 斤 mis-read is
+  exactly 2× kg — otherwise the 30–250 kg band); writes are paced 0.5 s apart so
+  a 90-day backfill cannot trip Garmin's rate limiter; a written-but-unverifiable
+  day raises a timezone-mismatch warning; skipped days carry their reason.
+- Mi client hardening: pagination stops after 200 pages instead of hanging on a
+  runaway cursor; 13-digit (millisecond) timestamps are scaled to seconds.
+- Fix: `garmin_hr_trend` fetched its window one serial request per day — a 90-day
+  call was minutes of waiting and rate-limit bait; days are now fetched six at a
+  time. `garmin_training_status` scans its 7 readiness days in parallel too.
+- Fix: `garmin_events` promised "upcoming" but returned the whole calendar, past
+  events included; it now drops them and sorts soonest first.
+- Fix: `garmin_activity_detail` documented a "gps" value for `fields` that never
+  existed; the docstring no longer suggests it.
 
 ### 0.1.7
 - New: `garmin_body_composition` — weight/BMI/body-fat/muscle-mass history. Garmin
