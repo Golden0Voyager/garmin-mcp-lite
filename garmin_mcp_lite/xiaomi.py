@@ -53,6 +53,11 @@ CAPTCHA_PATH = Path("/tmp/xiaomi_captcha.png")
 
 FLAG_PHONE = 4
 
+# A real account pages through its history in a handful of requests; hitting
+# this cap means the server is echoing the same cursor back and would paginate
+# forever. Fail loudly instead of hanging the tool call.
+_MAX_PAGES = 200
+
 
 class XiaomiError(RuntimeError):
     """Raised when the Mi cloud refuses a login or a request."""
@@ -391,7 +396,7 @@ class MiCloud:
         items: list[dict[str, Any]] = []
         next_key: str | None = None
 
-        while True:
+        for _page in range(_MAX_PAGES):
             payload: dict[str, Any] = {"start_time": 1, "end_time": int(time.time()) + 86400, "key": "weight"}
             if next_key:
                 payload["next_key"] = next_key
@@ -405,6 +410,10 @@ class MiCloud:
             if not result.get("has_more") or not result.get("next_key"):
                 break
             next_key = str(result["next_key"])
+        else:
+            raise XiaomiError(
+                f"Mi cloud kept returning a next page for {_MAX_PAGES} pages; giving up rather than loop forever."
+            )
 
         records = [record for record in (_normalise(item) for item in items) if record]
         records.sort(key=lambda record: record["timestamp"])
@@ -441,7 +450,12 @@ def _normalise(item: dict[str, Any]) -> dict[str, Any] | None:
     if weight is None:
         return None
 
-    moment = datetime.fromtimestamp(int(item.get("time") or 0))
+    raw_time = int(item.get("time") or 0)
+    # The protocol speaks seconds; a 13-digit millisecond value would land in
+    # year 52xxx and silently fall outside every sync window.
+    if raw_time > 10_000_000_000:
+        raw_time //= 1000
+    moment = datetime.fromtimestamp(raw_time)
     record: dict[str, Any] = {
         "timestamp": moment.strftime("%Y-%m-%dT%H:%M:%S"),
         "date": moment.strftime("%Y-%m-%d"),

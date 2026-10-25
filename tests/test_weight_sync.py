@@ -178,6 +178,116 @@ class TestWriting:
         assert result["written"][0]["verified"] is False
 
 
+class TestPlausibility:
+    """Garmin keeps every entry forever, so a bad weight must never be written."""
+
+    def _garmin_history(self) -> dict:
+        return {
+            "records": [
+                {"date": "2026-10-17", "weight_kg": 71.0},
+                {"date": "2026-10-18", "weight_kg": 71.2},
+                {"date": "2026-10-19", "weight_kg": 71.4},
+            ]
+        }
+
+    def test_refuses_a_weight_that_doubles_the_garmin_median(self, mocks) -> None:
+        # 斤 reads exactly 2× kg: a 71 kg person would arrive as ~142.
+        fetch, read, write = mocks
+        fetch.return_value = [_record("2026-10-20", 142.4)]
+        read.return_value = self._garmin_history()
+
+        result = weight_sync.sync_weight()
+
+        assert result["written"] == []
+        assert result["skipped"][0]["date"] == "2026-10-20"
+        assert "unit mix-up" in result["skipped"][0]["reason"]
+        assert result["garmin"]["plausibility_baseline_kg"] == 71.2
+        write.assert_not_called()
+
+    def test_accepts_normal_fluctuation_around_the_median(self, mocks) -> None:
+        fetch, read, write = mocks
+        fetch.return_value = [_record("2026-10-20", 75.0)]
+        read.return_value = self._garmin_history()
+
+        result = weight_sync.sync_weight()
+
+        assert [item["date"] for item in result["written"]] == ["2026-10-20"]
+        write.assert_called_once()
+
+    def test_without_history_absolute_bounds_apply(self, mocks) -> None:
+        # Two Garmin points are not enough for a median, so the wide bounds rule.
+        fetch, read, write = mocks
+        fetch.return_value = [_record("2026-10-20", 300.0)]
+        read.return_value = {"records": [{"date": "2026-10-19", "weight_kg": 71.0}]}
+
+        result = weight_sync.sync_weight()
+
+        assert result["written"] == []
+        assert "outside 30–250 kg" in result["skipped"][0]["reason"]
+        assert result["garmin"]["plausibility_baseline_kg"] is None
+        write.assert_not_called()
+
+    def test_median_of_an_even_history_is_the_midpoint(self, mocks) -> None:
+        fetch, read, write = mocks
+        fetch.return_value = [_record("2026-10-20", 142.4)]
+        read.return_value = {
+            "records": [
+                {"date": "2026-10-16", "weight_kg": 70.0},
+                {"date": "2026-10-17", "weight_kg": 71.0},
+                {"date": "2026-10-18", "weight_kg": 72.0},
+                {"date": "2026-10-19", "weight_kg": 73.0},
+            ]
+        }
+
+        result = weight_sync.sync_weight()
+
+        assert result["garmin"]["plausibility_baseline_kg"] == 71.5
+        assert result["written"] == []
+        write.assert_not_called()
+
+    def test_dry_run_reports_the_refusal_without_writing(self, mocks) -> None:
+        fetch, read, write = mocks
+        fetch.return_value = [_record("2026-10-20", 142.4)]
+        read.return_value = self._garmin_history()
+
+        result = weight_sync.sync_weight(dry_run=True)
+
+        assert result["written"] == []
+        assert "unit mix-up" in result["skipped"][0]["reason"]
+        write.assert_not_called()
+
+
+class TestPacing:
+    def test_pauses_between_writes_but_not_before_the_first(self, mocks) -> None:
+        fetch, _read, _write = mocks
+        fetch.return_value = [_record("2026-10-18"), _record("2026-10-19"), _record("2026-10-20")]
+
+        with patch.object(weight_sync.time, "sleep") as sleep:
+            weight_sync.sync_weight()
+
+        assert sleep.call_count == 2  # between writes only, never before the first
+        sleep.assert_called_with(weight_sync._WRITE_PAUSE_S)
+
+
+class TestVerificationWarning:
+    def test_unverified_writes_raise_a_timezone_warning(self, mocks) -> None:
+        fetch, _read, write = mocks
+        fetch.return_value = [_record("2026-10-20")]
+        write.return_value = {"written": True, "verified": False}
+
+        result = weight_sync.sync_weight()
+
+        assert "timezone" in result["warning"]
+
+    def test_verified_writes_stay_quiet(self, mocks) -> None:
+        fetch, _read, _write = mocks
+        fetch.return_value = [_record("2026-10-20")]
+
+        result = weight_sync.sync_weight()
+
+        assert "warning" not in result
+
+
 class TestWindow:
     def test_clamps_a_huge_window(self, mocks) -> None:
         fetch, _read, _write = mocks

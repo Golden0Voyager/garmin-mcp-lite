@@ -295,6 +295,20 @@ class TestFetchWeightRecords:
 
         assert cloud.fetch_weight_records() == []
 
+    def test_stops_a_runaway_cursor(self) -> None:
+        # A server that echoes the same next_key forever must not hang the tool.
+        page = {
+            "code": 0,
+            "result": {"data_list": [_raw_item(1000, {"weight": 70.0})], "has_more": True, "next_key": "again"},
+        }
+        cloud = xiaomi.MiCloud(_token())
+        cloud._post = MagicMock(return_value=page)  # type: ignore[method-assign]
+
+        with pytest.raises(xiaomi.XiaomiError, match="loop forever"):
+            cloud.fetch_weight_records()
+
+        assert cloud._post.call_count == xiaomi._MAX_PAGES
+
 
 class TestNormalise:
     def test_reads_the_current_snake_case_layout(self) -> None:
@@ -380,6 +394,14 @@ class TestNormalise:
         expected = datetime.fromtimestamp(1700000000)
         assert record["timestamp"] == expected.strftime("%Y-%m-%dT%H:%M:%S")
         assert record["date"] == expected.strftime("%Y-%m-%d")
+
+    def test_millisecond_timestamps_are_scaled_to_seconds(self) -> None:
+        # A 13-digit value would land in year 52xxx and drop out of every window.
+        record = xiaomi._normalise(_raw_item(1_700_000_000_000, {"weight": 70.0}))
+
+        assert record is not None
+        expected = datetime.fromtimestamp(1_700_000_000)
+        assert record["timestamp"] == expected.strftime("%Y-%m-%dT%H:%M:%S")
 
 
 class TestFetchWeights:
