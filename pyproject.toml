@@ -46,6 +46,9 @@ garmin-mcp-lite = "garmin_mcp_lite.server:main"
 garmin-mcp-lite-login = "garmin_mcp_lite.login:main"
 # Xiaomi's login needs a captcha and an SMS code, so it cannot be a tool call.
 garmin-mcp-lite-xiaomi-login = "garmin_mcp_lite.xiaomi_login:main"
+# One guided entry point for both logins; reuses login.run_login and
+# xiaomi_login.run underneath.
+garmin-mcp-lite-setup = "garmin_mcp_lite.setup:main"
 
 [project.optional-dependencies]
 dev = [

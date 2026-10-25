@@ -68,17 +68,13 @@ def _report(records: list[dict]) -> None:
         print(f"    {moment}  " + "  ".join(parts) + f"  [{record['source']}]")
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Log in to Mi Fitness and report the weight data it holds.")
-    parser.add_argument("--days", type=int, default=30, help="How many days of history to report (default 30)")
-    parser.add_argument("--relogin", action="store_true", help="Ignore the cached token and log in again")
-    args = parser.parse_args()
-
+def run(days: int = 30, relogin: bool = False) -> int:
+    """The whole login / data-check flow; returns a process exit code."""
     print("=" * 62)
     print("Mi Fitness login / data check")
     print("=" * 62)
 
-    token = None if args.relogin else load_token()
+    token = None if relogin else load_token()
     cloud: MiCloud | None = None
 
     if token is not None:
@@ -107,14 +103,14 @@ def main() -> int:
         cloud.refresh()
         print(f"      logged in as {token['userId'][:4]}****")
 
-    print(f"\n[2/2] Reading weight data (last {args.days} days)")
+    print(f"\n[2/2] Reading weight data (last {days} days)")
     try:
         records = cloud.fetch_weight_records()
     except XiaomiError as exc:
         print(f"      failed: {exc}")
         return 1
 
-    cutoff = datetime.now() - timedelta(days=max(1, args.days))
+    cutoff = datetime.now() - timedelta(days=max(1, days))
     recent = [record for record in records if datetime.fromisoformat(record["timestamp"]) >= cutoff]
     print(f"      {len(records)} records total, {len(recent)} inside the window\n")
     # Fall back to the full history: an empty window is not the same as an empty account.
@@ -124,6 +120,14 @@ def main() -> int:
     print(f"\ntoken saved: {TOKEN_PATH} (mode 600)")
     print("\nNext: ask the assistant to run garmin_sync_weight, or call it with dry_run=true first.")
     return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Log in to Mi Fitness and report the weight data it holds.")
+    parser.add_argument("--days", type=int, default=30, help="How many days of history to report (default 30)")
+    parser.add_argument("--relogin", action="store_true", help="Ignore the cached token and log in again")
+    args = parser.parse_args()
+    return run(days=args.days, relogin=args.relogin)
 
 
 if __name__ == "__main__":

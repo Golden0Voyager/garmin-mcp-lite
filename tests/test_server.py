@@ -19,6 +19,7 @@ from garmin_mcp_lite import server
 # tool name -> (module that defines it, function name). Pinned deliberately: this
 # is the contract clients see, so any rename has to be a conscious edit here.
 EXPECTED_TOOLS: dict[str, tuple[str, str]] = {
+    "garmin_status": ("status", "get_status"),
     "garmin_activities": ("activities", "list_activities"),
     "garmin_activity_detail": ("activities", "get_activity_detail"),
     "garmin_training_plan": ("training", "get_training_plan"),

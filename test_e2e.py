@@ -229,7 +229,18 @@ def check_zones() -> None:
         print(f"  乳酸阈值: {lt.get('heart_rate')} bpm | {lt.get('pace_per_km')}/km")
 
 
+def check_status() -> None:
+    from garmin_mcp_lite.tools.status import get_status
+
+    result = get_status()
+    garmin, xiaomi = result["garmin"], result["xiaomi"]
+    print(f"  Garmin: {'ok (' + garmin['account'] + ')' if garmin['ok'] else garmin['detail']}")
+    print(f"  Mi Fitness: {'ok' if xiaomi['ok'] else '未配置/已失效（仅 garmin_sync_weight 需要）'}")
+    assert result["ready"], "Garmin token 不可用，请先运行 garmin-mcp-lite-login"
+
+
 _STEPS = [
+    ("garmin_status", check_status),
     ("登录", check_login),
     ("garmin_activities", check_activities),
     ("garmin_activity_detail", check_activity_detail),

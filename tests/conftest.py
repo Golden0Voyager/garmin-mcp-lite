@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 _TOOL_MODULES = [
+    # onboarding is not a tool module, but its probes call get_client(); the
+    # autouse patch keeps the garmin_status tool off the real token store.
+    "garmin_mcp_lite.onboarding",
     "garmin_mcp_lite.tools.activities",
     "garmin_mcp_lite.tools.body",
     "garmin_mcp_lite.tools.health",
@@ -119,18 +123,27 @@ def _build_fake() -> MagicMock:
     fake.get_devices.return_value = [{"deviceId": 123, "displayName": "My Fenix 7", "partNumber": "F7X-045-01", "currentFirmwareVersion": "28.10", "softwareUpdates": [], "deviceStatus": "ACTIVE", "primaryActivityTrackerIndicator": True, "primaryTrainingCapable": True, "registeredDate": 1700000000000, "connected": True}]
 
     # -- events --
+    def _day(offset: int) -> str:
+        return (datetime.now() + timedelta(days=offset)).strftime("%Y-%m-%d")
+
     def _fake_connectapi(path: str) -> list:
         if path == "/calendar-service/events":
             return [
                 {
-                    "eventName": "Tokyo Marathon", "date": "2027-03-07", "eventType": "running",
+                    # Already ran: the tool must drop it, not report it as upcoming.
+                    "eventName": "Spring 10K", "date": _day(-30), "eventType": "running",
+                    "completionTarget": None, "eventCustomization": None,
+                },
+                {
+                    # Returned out of order on purpose: the tool sorts soonest first.
+                    "eventName": "Tokyo Marathon", "date": _day(130), "eventType": "running",
                     "completionTarget": {"value": 42.195},
                     "eventCustomization": {"isPrimaryEvent": True, "customGoal": {"unitType": "time", "value": 14400}, "trainingPlanId": "plan_marathon"},
                 },
                 {
                     # Real shape for an event with no custom goal: both nested
                     # objects are explicit nulls, not absent keys.
-                    "eventName": "Local 10K", "date": "2026-11-01", "eventType": "running",
+                    "eventName": "Local 10K", "date": _day(8), "eventType": "running",
                     "completionTarget": None,
                     "eventCustomization": {"isPrimaryEvent": False, "customGoal": None, "trainingPlanId": None},
                 },

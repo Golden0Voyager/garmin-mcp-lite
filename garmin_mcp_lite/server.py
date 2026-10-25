@@ -14,6 +14,7 @@ from garmin_mcp_lite.tools import (
     hr_trend,
     race_prediction,
     records,
+    status,
     training,
     weekly_stats,
     weight_sync,
@@ -36,6 +37,7 @@ mcp = FastMCP("garmin-mcp-lite")
 # built lazily inside run(), so assigning the attribute here is sufficient.
 mcp._mcp_server.version = _package_version()
 
+mcp.add_tool(status.get_status, name="garmin_status")
 mcp.add_tool(activities.list_activities, name="garmin_activities")
 mcp.add_tool(activities.get_activity_detail, name="garmin_activity_detail")
 mcp.add_tool(training.get_training_plan, name="garmin_training_plan")
