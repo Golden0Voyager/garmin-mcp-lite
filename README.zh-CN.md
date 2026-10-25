@@ -297,7 +297,16 @@ python test_e2e.py
 
 ## 变更记录
 
-### 0.1.8
+### 0.1.7
+- 新增 `garmin_body_composition`：体重/BMI/体脂率/肌肉量历史。Garmin 返回的质量单位是克，
+  统一换算为千克，值为 null 的字段直接省略。
+- 新增 `garmin_add_body_composition`：本项目第一个写入工具。以 FIT 体成分
+  文件上传，与 Garmin Index 体脂秤走同一条通道。超过 500 千克的体重会被判定为误传克值并
+  拒绝；当天已有记录时返回 `warning`。
+- 新增 `garmin_sync_weight`：把小米体脂秤的称重记录同步进 Garmin，只补缺失的天。
+  附带 `garmin_mcp_lite.xiaomi` —— 小米运动健康私有协议（RC4 + 双重 SHA1 签名，
+  无公开文档）的只读客户端，在此重新实现，因此除 `requests` 外不引入新依赖；
+  以及 `garmin-mcp-lite-xiaomi-login` 命令行入口，用于那一次无法绕开验证码的交互登录。
 - 新增 `garmin_status`：报告两个一次性登录（Garmin、小米）是否就位且有效，失效时给出
   要跑的确切命令。`ready` 只看 Garmin 侧 —— 没有小米秤的用户缺少小米 token 是正常配置。
 - 新增 `garmin-mcp-lite-setup`：一条命令引导完成两个登录：先 Garmin（环境变量或交互输入），
@@ -311,20 +320,8 @@ python test_e2e.py
   `garmin_training_status` 的 7 天准备度扫描同样并行。
 - 修复：`garmin_events` 文档承诺"即将到来"却返回整个日历（含已结束赛事），现在会过滤并按日期升序。
 - 修复：`garmin_activity_detail` 的 `fields` 文档里列了从未实现的 `"gps"`，已移除。
-
-### 0.1.7
-- 新增 `garmin_body_composition`：体重/BMI/体脂率/肌肉量历史。Garmin 返回的质量单位是克，
-  统一换算为千克，值为 null 的字段直接省略。
-- 新增 `garmin_add_body_composition`：本项目第一个写入工具。以 FIT 体成分
-  文件上传，与 Garmin Index 体脂秤走同一条通道。超过 500 千克的体重会被判定为误传克值并
-  拒绝；当天已有记录时返回 `warning`。
-- `test_e2e.py` 新增 `--write-test` 开关，写入验证需显式开启，日常端到端测试不碰账号数据。
-
-- 新增 `garmin_sync_weight`：把小米体脂秤的称重记录同步进 Garmin，只补缺失的天。
-  附带 `garmin_mcp_lite.xiaomi` —— 小米运动健康私有协议（RC4 + 双重 SHA1 签名，
-  无公开文档）的只读客户端，在此重新实现，因此除 `requests` 外不引入新依赖；
-  以及 `garmin-mcp-lite-xiaomi-login` 命令行入口，用于那一次无法绕开验证码的交互登录。
-- `test_e2e.py` 中 `garmin_sync_weight` 默认以 dry_run 运行，未配置小米账号时自动跳过。
+- `test_e2e.py` 新增 `--write-test` 开关，写入验证需显式开启，日常端到端测试不碰账号数据；
+  `garmin_sync_weight` 在其中默认 dry_run，未配置小米账号时自动跳过，且以 `garmin_status` 开场。
 
 ### 0.1.6
 - 修复：`garmin_events` 在遇到没有自定义目标的赛事时报

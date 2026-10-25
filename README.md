@@ -302,7 +302,19 @@ python test_e2e.py
 
 ## Changelog
 
-### 0.1.8
+### 0.1.7
+- New: `garmin_body_composition` — weight/BMI/body-fat/muscle-mass history. Garmin
+  returns mass in grams; it is normalised to kilograms and null fields are dropped.
+- New: `garmin_add_body_composition` — the first (and only) write tool. Uploads a FIT
+  body-composition file, the same channel the Garmin Index scale uses. Weights above
+  500 kg are rejected as an accidental gram value, and the response warns when the
+  day already had an entry.
+- New: `garmin_sync_weight` — pulls weigh-ins from a Xiaomi body-fat scale into Garmin.
+  Only days Garmin lacks are written, so it is idempotent. Adds
+  `garmin_mcp_lite.xiaomi`, a read-only client for Mi Fitness's private RC4/SHA1-signed
+  protocol (undocumented; reimplemented here so nothing beyond `requests` is needed),
+  and the `garmin-mcp-lite-xiaomi-login` console script for the one-time interactive
+  login that a captcha makes unavoidable.
 - New: `garmin_status` — reports whether the one-time logins (Garmin, Mi Fitness)
   are in place and still valid, and names the exact command to run next. `ready`
   reflects the Garmin side only: a missing Xiaomi token is a valid configuration
@@ -323,23 +335,10 @@ python test_e2e.py
   events included; it now drops them and sorts soonest first.
 - Fix: `garmin_activity_detail` documented a "gps" value for `fields` that never
   existed; the docstring no longer suggests it.
-
-### 0.1.7
-- New: `garmin_body_composition` — weight/BMI/body-fat/muscle-mass history. Garmin
-  returns mass in grams; it is normalised to kilograms and null fields are dropped.
-- New: `garmin_add_body_composition` — the first (and only) write tool. Uploads a FIT
-  body-composition file, the same channel the Garmin Index scale uses. Weights above
-  500 kg are rejected as an accidental gram value, and the response warns when the
-  day already had an entry.
-- New: `garmin_sync_weight` — pulls weigh-ins from a Xiaomi body-fat scale into Garmin.
-  Only days Garmin lacks are written, so it is idempotent. Adds
-  `garmin_mcp_lite.xiaomi`, a read-only client for Mi Fitness's private RC4/SHA1-signed
-  protocol (undocumented; reimplemented here so nothing beyond `requests` is needed),
-  and the `garmin-mcp-lite-xiaomi-login` console script for the one-time interactive
-  login that a captcha makes unavoidable.
 - `test_e2e.py` grew a `--write-test` flag; the write path is opt-in so a routine
   end-to-end run never touches account data. `garmin_sync_weight` runs in `dry_run`
-  mode by default there, and skips when no Xiaomi account is configured.
+  mode by default there, skips when no Xiaomi account is configured, and the run
+  now opens with a `garmin_status` step.
 
 ### 0.1.6
 - Fix: `garmin_events` crashed with `'NoneType' object has no attribute 'get'` on any
