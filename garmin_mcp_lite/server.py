@@ -11,6 +11,7 @@ from garmin_mcp_lite.tools import (
     events,
     gear,
     health,
+    healthkit,
     hr_trend,
     race_prediction,
     records,
@@ -56,6 +57,7 @@ mcp.add_tool(zones.get_zones, name="garmin_zones")
 mcp.add_tool(body.get_body_composition, name="garmin_body_composition")
 mcp.add_tool(body.add_body_composition, name="garmin_add_body_composition")
 mcp.add_tool(weight_sync.sync_weight, name="garmin_sync_weight")
+mcp.add_tool(healthkit.sync_healthkit, name="garmin_sync_healthkit")
 
 
 def main():
