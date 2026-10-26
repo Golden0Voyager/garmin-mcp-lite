@@ -1,6 +1,6 @@
 [project]
 name = "garmin-mcp-lite"
-version = "0.1.7"
+version = "0.1.8"
 description = "精简版 Garmin MCP 服务器 - 专为耐力运动爱好者设计"
 readme = "README.md"
 license = { file = "LICENSE" }

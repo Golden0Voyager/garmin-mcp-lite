@@ -5,7 +5,7 @@
 > You are interfacing with a Garmin MCP (Model Context Protocol) server. 
 > 1. **Data Freshness**: Always query the data if the user asks about their recent workouts or health metrics.
 > 2. **Parameter Tuning**: Use the `fields` parameter in tools like `garmin_activity_detail` to limit the response payload and save context window (e.g., `["splits", "hrZones"]`).
-> 3. **Mostly Read-Only**: 17 tools read. Two write weight data (`garmin_add_body_composition`, `garmin_sync_weight`): confirm the numbers with the user before calling, and prefer `dry_run=true` for the sync — there is no undo.
+> 3. **Mostly Read-Only**: 17 tools read. Three write weight data (`garmin_add_body_composition`, `garmin_sync_weight`, `garmin_sync_healthkit`): confirm the numbers with the user before calling, and prefer `dry_run=true` for the syncs — there is no undo.
 > 4. **No Password Request**: Never ask the user for their Garmin password. Authentication is handled out-of-band via a local token.
 > 5. **Health Tip**: `garmin_health` now supports a `metric` parameter — use `"steps"`, `"sleep"`, `"hrv"`, `"spo2"`, `"body_battery"`, etc., to query specific data and save context window.
 > 6. **Zone Context**: `garmin_activity_detail` returns seconds per heart rate zone but no boundaries. Call `garmin_zones` first to get the bpm ranges before judging intensity.
@@ -20,11 +20,11 @@
 
 A lightweight Garmin Model Context Protocol (MCP) server, designed specifically for endurance athletes.
 
-It exposes **19 precisely-curated endpoints** for deep analysis of running, cycling, swimming, and health data — replacing bulky 80+ endpoint alternatives with a clean, focused toolset.
+It exposes **20 precisely-curated endpoints** for deep analysis of running, cycling, swimming, and health data — replacing bulky 80+ endpoint alternatives with a clean, focused toolset.
 
-17 of them read. Two write: `garmin_add_body_composition` for a single manual weigh-in, and `garmin_sync_weight` to pull them from a Xiaomi body-fat scale — Garmin has no way to accept weight data from a third-party scale.
+17 of them read. Three write: `garmin_add_body_composition` for a single manual weigh-in, `garmin_sync_weight` to pull them from a Xiaomi body-fat scale, and `garmin_sync_healthkit` for scales whose apps write to Apple Health — Garmin has no way to accept weight data from a third-party scale.
 
-## Core Tools (19)
+## Core Tools (20)
 
 ### 🔧 Setup & Diagnosis
 
@@ -60,6 +60,7 @@ It exposes **19 precisely-curated endpoints** for deep analysis of running, cycl
 | `garmin_body_composition` | Weight and body-composition history: weight, BMI, body fat %, body water %, muscle mass, bone mass, visceral fat, metabolic age. Mass is normalised to kilograms and unmeasured fields are omitted. |
 | `garmin_add_body_composition` | **Write** one measurement (weight required, everything else optional). Uploads a FIT body-composition file — the same channel Garmin's own Index scale uses. |
 | `garmin_sync_weight` | **Write** weigh-ins from a Xiaomi body-fat scale into Garmin. Only days Garmin does not already have are written, so it is idempotent. Needs a one-time `garmin-mcp-lite-xiaomi-login`. |
+| `garmin_sync_healthkit` | **Write** weigh-ins that an iPhone Shortcut mirrored from Apple Health into Garmin — for scales whose app (蚂蚁阿福, etc.) has no cloud this server can read. Same idempotent, plausibility-checked write path. See [Apple Health bridge](#syncing-a-xiaomi-body-fat-scale). |
 
 > **`garmin_add_body_composition` writes to your Garmin account.** There is no undo through this tool. Garmin keeps every entry, so calling it twice for the same day can leave two weigh-ins; the response warns you when that day already had one. `weight` is in **kilograms** — values above 500 are rejected as an accidental gram value, because the read tool returns grams at the API level and a read-modify-write is the obvious way to get this wrong. Garmin's upload endpoint does not always report a status, so the tool reads the day back and returns `verified: true` only when the stored weight matches what it sent.
 
@@ -179,6 +180,7 @@ GUI clients such as Chatbox are launched from Finder and do **not** inherit your
 |:---|:---|:---|
 | `GARMIN_IS_CN` | unset | Set to `true` for accounts registered with Garmin China (garmin.cn). Must match the region used at login. |
 | `GARMIN_TOKEN_DIR` | `~/.garmin-mcp-lite` | Where the session token lives. Change it to isolate multiple accounts. |
+| `GARMIN_HEALTH_FILE` | iCloud Drive `garmin/weight.txt` | The file the Apple Health bridge Shortcut appends to. |
 | `GARMIN_EMAIL` / `GARMIN_PASSWORD` | unset | Login script only. Never needed by the server itself. |
 
 ### Troubleshooting
@@ -201,7 +203,7 @@ printf '%s\n' \
  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | garmin-mcp-lite
 ```
 
-Expect a `serverInfo` line reporting this package's version, followed by all 19 tools.
+Expect a `serverInfo` line reporting this package's version, followed by all 20 tools.
 
 ## Syncing a Xiaomi Body-Fat Scale
 
@@ -229,6 +231,78 @@ Details worth knowing:
 - **A `warning` about unverifiable writes means timezone trouble.** Each write is confirmed by reading the day back; if writes keep coming back unverifiable, the machine running this server likely has a different timezone than the Garmin account, and duplicates may accumulate — align the timezones before syncing again.
 
 The Xiaomi token is cached at `~/.garmin-mcp-lite/xiaomi.json` (mode 600), next to the Garmin token. It expires when you change your Xiaomi password or trigger a security check — re-run the login command when that happens. Note that the token grants account-level access, so treat the file like a password.
+
+### Bridging other scales via Apple Health
+
+The Xiaomi sync reads Mi Fitness only. If your scale's app can write to Apple Health — Withings, Huawei Health, Yunmai, Renpho and most mainstream scales do — an iPhone Shortcut becomes the bridge: Health data is mirrored into a file in iCloud Drive, and `garmin_sync_healthkit` reads that file on your Mac and fills Garmin's gaps with the same idempotent, plausibility-checked write path. It depends on no vendor cloud; weight typed manually into the Health app works too.
+
+The steps below come from a complete real-world setup — every pitfall listed was hit for real.
+
+#### Step 0: Confirm your scale's app actually writes to Apple Health
+
+Do this check **before** configuring anything:
+
+1. Weigh in, wait a minute, open Health → Browse → Weight, and check whether the newest entry's source is your scale's app.
+2. Or: Settings → Health → Data Access & Devices → your scale's app. If there is only an "Allow Reading" list and **no "Allow Writing" section at all, the app has never requested write access and this bridge cannot work** (real-world example: the Ant Afu app — no sync switch inside the app, no write section in Health; a dead end).
+
+#### Step 1: Prepare the bridge file
+
+Create a `garmin` folder with a `weight.txt` file in iCloud Drive. Two pitfalls, both hit in practice:
+
+- **The extension must be `.txt`.** Shortcuts' "Append to Text File" picker only enables recognized text types — a `.jsonl` file shows up greyed out. The content is unchanged (one JSON object per line); the tool does not care about the extension, but the iPhone's file picker does.
+- **A 0-byte file does not trigger iCloud sync**, so the phone may not see it. Write one line into the file from the Mac and wait half a minute; in the Files app on the iPhone, pull down to refresh under Browse → iCloud Drive.
+
+#### Step 2: Create the shortcut (e.g. "Weigh-in bridge")
+
+Add actions one by one from the **search box at the bottom**; each new action connects below the last. Six actions, in order:
+
+| # | Action | Required settings (defaults are wrong — check each) |
+|---|--------|------|
+| 1 | Find Health Samples | Type: `Weight`; **Unit: Kilograms** (pins the value to kg regardless of the Health app's display unit); Sort By: `Start Date`, Order: `Newest First`; **Limit: on, Get 1 item** |
+| 2 | Get Details of Health Sample | Input: the sample; Detail: **Value** (without this the variable carries the "kg" unit text) |
+| 3 | Get Details of Health Sample | Same sample; Detail: **Start Date** |
+| 4 | Format Date | Date Format: Custom, `yyyy-MM-dd'T'HH:mm:ss`. **Use the sample's date, not "Current Date"** — a delayed trigger still records the real measurement time |
+| 5 | Text | See template below. Insert variables from the **variable bar above the keyboard**, do not type them; **press Return once after the `}`** — "Append to Text File" adds no trailing newline, and skipping this glues the next record onto the same line |
+| 6 | Append to Text File | File: iCloud Drive → `garmin` → `weight.txt` |
+
+Content of the Text action (brackets = insert the matching variable):
+
+```
+{"timestamp": [formatted date], "weight_kg": [value]}
+```
+
+If your scale also writes body fat / BMI, add one more "Find Health Samples + Get Details · Value" pair per metric (Type: `Body Fat Percentage` / `BMI`, settings as in step 1) and extend the text with `,"body_fat_pct": [fat value]`. **Include only metrics your scale actually writes**: a variable that comes back empty glues the line into a broken one and the weight is lost too. Note Health's standard types are only weight, body fat percentage and BMI — extended metrics a scale app displays (muscle mass, bone mass, visceral fat) never reach Health and cannot cross this bridge.
+
+#### Step 3: Run it once manually
+
+Tap **▶** at the bottom right. The first run asks for Health and Files permissions — allow both. The Text card should show something like `{"timestamp": "2026-10-25T09:08:00", "weight_kg": 72.2}`; `cat` the weight.txt on the Mac to confirm.
+
+#### Step 4: Set up the automation (verified on iOS 17/18)
+
+1. Shortcuts app → **Automation** tab → **+** → pick **App** in the trigger list
+2. Choose **Close**, pick your scale's app, **turn off "Ask Before Running"**
+3. Tap **Done** at the top right — there is no "Next" button
+4. Back in the Automation list, **open the newly created card** and pick the shortcut from the card's empty slot; if search fails, try a short keyword
+5. Leave the card's "Input / Select Variable" field **empty** — the shortcut fetches the data from Health itself
+
+Skipping the automation is fine: tapping the shortcut from the widget after a weigh-in works identically.
+
+#### Step 5: Sync
+
+Ask your assistant to run `garmin_sync_healthkit` (dry run first). The default file is `~/Library/Mobile Documents/com~apple~CloudDocs/garmin/weight.txt`; set `GARMIN_HEALTH_FILE` to point somewhere else.
+
+#### Troubleshooting (all of these really happened)
+
+| Symptom | Cause | Fix |
+|:---|:---|:---|
+| File greyed out in "Append to Text File" | iOS picker does not recognize `.jsonl` and friends | Use a `.txt` extension |
+| The garmin folder never shows up on the phone | A 0-byte file does not trigger iCloud sync | Write a line into the file from the Mac; pull-to-refresh in Files |
+| Conflict copies like `weight.txt.json` appear | The shortcut appended to a different file the iPhone created itself | Delete the copies **on the iPhone** and re-point the shortcut at weight.txt (deleting only on the Mac gets overwritten again) |
+| The same line appears several times | Automation fired repeatedly, or manual + automation both ran | Harmless — the tool deduplicates by timestamp |
+| `unparsed` > 0 in the sync result | Missing trailing newline in the Text action glued two records together | The tool splits glued JSON objects automatically; still, add the newline |
+| A weigh-in never shows up | The scale app has not written it to Health yet | Back to Step 0: check the source in the Health app |
+
+The file is append-only and this tool never edits it: repeated lines, re-runs and double triggers are all harmless (duplicates collapse by timestamp, days collapse to the earliest weigh-in, days Garmin already has are skipped). Even if the Health app displays 斤 on your phone: the shortcut pins kilograms, and the plausibility gate would refuse a 2× value before it reaches Garmin.
 
 ## Example Queries
 
@@ -274,11 +348,11 @@ python3 scripts/smoke_wheel_install.py
 ```
 
 The suite is at 100% statement coverage across every module, including the
-19-tool registry in `server.py`. `tests/test_server.py` pins the exact tool
+20-tool registry in `server.py`. `tests/test_server.py` pins the exact tool
 names, so a rename or a dropped `add_tool()` call fails a test instead of
 silently disappearing from a client's `tools/list`.
 
-There is also a live end-to-end script that walks all 19 tools against your own
+There is also a live end-to-end script that walks all 20 tools against your own
 account (needs a login token):
 
 ```bash
@@ -298,9 +372,17 @@ python test_e2e.py
 | Health Depth | Basic | SpO2, respiration, intensity minutes, steps |
 | Race/Challenge | No | Events calendar + challenge progress |
 | Write Ops | Heavy (weight/nutrition/gear) | Read-only |
-| Schema cost | High | ~2.4k tokens for all 19 tools |
+| Schema cost | High | ~2.5k tokens for all 20 tools |
 
 ## Changelog
+
+### 0.1.8
+- New: `garmin_sync_healthkit` — copies weigh-ins that an iPhone Shortcut mirrored
+  from Apple Health (one JSON line per measurement in an iCloud Drive file) into
+  Garmin. Built for scales whose app has no readable cloud, such as 蚂蚁阿福.
+  Shares the Xiaomi sync's per-day dedup, plausibility gate, paced writes and
+  read-back verification; the bridge file is append-only and never edited by the
+  tool, so re-runs and double triggers are harmless.
 
 ### 0.1.7
 - New: `garmin_body_composition` — weight/BMI/body-fat/muscle-mass history. Garmin
