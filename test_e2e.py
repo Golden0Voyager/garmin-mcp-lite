@@ -193,6 +193,23 @@ def check_add_body_composition() -> None:
 
 
 
+def check_sync_healthkit() -> None:
+    """Dry-run the Apple Health bridge. Reads the bridge file and Garmin, writes nothing."""
+    from garmin_mcp_lite.tools.healthkit import sync_healthkit
+
+    result = sync_healthkit(dry_run=True)
+    if result.get("error"):
+        # No bridge file is a valid configuration (no iPhone shortcut set up yet).
+        if "No Apple Health bridge file" in result["error"]:
+            print("  未配置快捷指令桥接文件，跳过（不影响其他检查）")
+            return
+        raise RuntimeError(result["error"])
+    bridge = result["bridge"]
+    print(f"  桥接文件 {bridge['parsed']} 条 / {bridge['days']} 天（重复 {bridge['duplicate_timestamps']} 条）")
+    for item in result["written"][:5]:
+        print(f"    {item['date']}: {item['weight_kg']} kg")
+
+
 def check_sync_weight() -> None:
     """Dry-run the Xiaomi -> Garmin sync. Reads both sides, writes nothing."""
     from garmin_mcp_lite.tools.weight_sync import sync_weight
@@ -259,6 +276,7 @@ _STEPS = [
     ("garmin_zones", check_zones),
     ("garmin_body_composition", check_body_composition),
     ("garmin_sync_weight (dry run)", check_sync_weight),
+    ("garmin_sync_healthkit (dry run)", check_sync_healthkit),
 ]
 
 
