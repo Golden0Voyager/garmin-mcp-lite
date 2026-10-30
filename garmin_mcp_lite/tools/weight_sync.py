@@ -12,7 +12,9 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from garmin_mcp_lite.tools.body import add_body_composition, get_body_composition
+from garmin_mcp_lite.client import get_client
+from garmin_mcp_lite.tools._common import days_ago_str, today_str
+from garmin_mcp_lite.tools.body import _account_offset, _write_composition, get_body_composition
 from garmin_mcp_lite.xiaomi import XiaomiError, fetch_weights
 
 # Each write costs three API calls (write, status probe, read-back), so a long
@@ -136,10 +138,30 @@ def sync_weight(days: int = 7, dry_run: bool = False) -> dict:
     have = {str(record.get("date")) for record in existing.get("records", []) if record.get("date")}
     baseline = _baseline_weight(existing)
 
+    # Where the account's clock sits, read off the rows already there. This is
+    # what keeps a sync run from a laptop in another timezone from filing every
+    # weighing at the wrong hour — and from then failing to match it. One extra
+    # read of the same window: get_body_composition() normalises the rows and
+    # drops the raw pair the offset is computed from.
+    try:
+        client = get_client()
+    except Exception as exc:
+        # Everything else here reports failure as a dict; a missing Garmin token
+        # must not be the one thing that throws instead.
+        return {"error": str(exc), "written": []}
+
+    try:
+        offset_s = _account_offset(client, days_ago_str(window), today_str())
+    except Exception:
+        # An unreadable offset is not a reason to abandon the sync: without it the
+        # timestamp is left alone, which is what every version before this did.
+        offset_s = None
+
     written: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
     write_attempts = 0
+    stopped_early: str | None = None
 
     for day in sorted(by_day):
         record = by_day[day]
@@ -162,9 +184,10 @@ def sync_weight(days: int = 7, dry_run: bool = False) -> dict:
             time.sleep(_WRITE_PAUSE_S)
         write_attempts += 1
 
-        result = add_body_composition(
-            weight=record["weight_kg"],
-            date=str(record["timestamp"]),
+        result = _write_composition(
+            client,
+            value=record["weight_kg"],
+            timestamp=str(record["timestamp"]),
             body_fat=record.get("body_fat_pct"),
             body_water=record.get("body_water_pct"),
             muscle_mass=record.get("muscle_mass_kg"),
@@ -172,18 +195,29 @@ def sync_weight(days: int = 7, dry_run: bool = False) -> dict:
             bmi=record.get("bmi"),
             basal_met=record.get("basal_met"),
             metabolic_age=int(record["metabolic_age"]) if record.get("metabolic_age") else None,
+            account_offset_s=offset_s,
         )
         if result.get("error"):
             failed.append({"date": day, "error": result["error"]})
-        else:
-            written.append(
-                {
-                    "date": day,
-                    "weight_kg": record["weight_kg"],
-                    "verified": result.get("verified"),
-                    "body_fat_pct": record.get("body_fat_pct"),
-                }
-            )
+            if result.get("rate_limited"):
+                # Every remaining write would hit the same wall, and hammering it
+                # only lengthens the block. Stopping is safe precisely because the
+                # sync is idempotent: the next call resumes where this one stopped.
+                stopped_early = (
+                    f"Garmin rate-limited the run after {len(written)} writes. Nothing is lost — "
+                    "re-run in a few minutes and it continues from there, because every day "
+                    "already on Garmin is skipped."
+                )
+                break
+            continue
+        written.append(
+            {
+                "date": day,
+                "weight_kg": record["weight_kg"],
+                "verified": result.get("verified"),
+                "body_fat_pct": record.get("body_fat_pct"),
+            }
+        )
 
     summary: dict[str, Any] = {
         "dry_run": bool(dry_run),
@@ -192,11 +226,16 @@ def sync_weight(days: int = 7, dry_run: bool = False) -> dict:
         "garmin": {
             "days_already_present": len(have & set(by_day)),
             "plausibility_baseline_kg": baseline,
+            # Read off the account's own rows; null means the window proved
+            # nothing and the timestamps were sent unchanged.
+            "account_offset_hours": None if offset_s is None else round(offset_s / 3600, 2),
         },
         "written": written,
         "skipped": skipped,
         "failed": failed,
     }
+    if stopped_early:
+        summary["stopped_early"] = stopped_early
 
     # add_body_composition() reads the day back; a written-but-unverifiable day
     # usually means the server's timezone disagrees with the account's, which

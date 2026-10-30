@@ -24,10 +24,15 @@ def mocks():
     with (
         patch.object(weight_sync, "fetch_weights") as fetch,
         patch.object(weight_sync, "get_body_composition") as read,
-        patch.object(weight_sync, "add_body_composition") as write,
+        patch.object(weight_sync, "_write_composition") as write,
+        patch.object(weight_sync, "get_client") as _client,
+        patch.object(weight_sync, "_account_offset") as offset,
     ):
         read.return_value = {"count": 0, "records": []}
         write.return_value = {"written": True, "verified": True}
+        # No zone proven by the window: the timestamps go out unchanged, which is
+        # the behaviour every test not about timezones should be exercising.
+        offset.return_value = None
         yield fetch, read, write
 
 
@@ -137,8 +142,8 @@ class TestWriting:
         weight_sync.sync_weight()
 
         kwargs = write.call_args.kwargs
-        assert kwargs["weight"] == 71.2
-        assert kwargs["date"] == "2026-10-20T07:00:00"
+        assert kwargs["value"] == 71.2
+        assert kwargs["timestamp"] == "2026-10-20T07:00:00"
         assert kwargs["body_fat"] == 18.4
         assert kwargs["body_water"] == 55.2
         assert kwargs["muscle_mass"] == 28.5
@@ -312,3 +317,76 @@ class TestWindow:
 
         assert "Zepp Life" in result["note"]
         assert result["xiaomi"]["weigh_ins"] == 0
+
+
+class TestGarminFailure:
+    """What happens when the Garmin side is the thing that is broken."""
+
+    def test_a_missing_garmin_token_is_reported_not_raised(self, mocks) -> None:
+        fetch, _read, write = mocks
+        fetch.return_value = [_record("2026-10-20")]
+
+        with patch.object(weight_sync, "get_client", side_effect=RuntimeError("Garmin token not found")):
+            result = weight_sync.sync_weight()
+
+        assert "Garmin token not found" in result["error"]
+        assert result["written"] == []
+        write.assert_not_called()
+
+    def test_an_unreadable_zone_does_not_stop_the_sync(self, mocks) -> None:
+        # Without a zone the timestamps go out unchanged, which is what every
+        # version before this did. Failing the whole run over it would be worse.
+        fetch, _read, write = mocks
+        fetch.return_value = [_record("2026-10-20")]
+
+        with patch.object(weight_sync, "_account_offset", side_effect=RuntimeError("read down")):
+            result = weight_sync.sync_weight()
+
+        assert len(result["written"]) == 1
+        assert write.call_args.kwargs["account_offset_s"] is None
+        assert result["garmin"]["account_offset_hours"] is None
+
+    def test_the_window_zone_is_passed_to_the_write(self, mocks) -> None:
+        fetch, _read, write = mocks
+        fetch.return_value = [_record("2026-10-20")]
+
+        with patch.object(weight_sync, "_account_offset", return_value=8 * 3600):
+            result = weight_sync.sync_weight()
+
+        assert write.call_args.kwargs["account_offset_s"] == 8 * 3600
+        assert result["garmin"]["account_offset_hours"] == 8.0
+
+
+class TestRateLimits:
+    """What a backfill does when Garmin starts refusing writes for going too fast.
+
+    Both halves matter. Hammering on only lengthens the block, and stopping has to
+    be safe — which it is exactly because a day already written is skipped on the
+    next run.
+    """
+
+    def test_a_rate_limited_write_stops_the_run(self, mocks) -> None:
+        fetch, _read, write = mocks
+        fetch.return_value = [_record("2026-10-20"), _record("2026-10-21")]
+        write.side_effect = [{"error": "Rate limit exceeded", "written": False, "rate_limited": True}]
+
+        result = weight_sync.sync_weight()
+
+        assert write.call_count == 1  # the second day is never attempted
+        assert result["written"] == []
+        assert result["failed"][0]["date"] == "2026-10-20"
+        assert "rate-limited the run after 0 writes" in result["stopped_early"]
+
+    def test_a_plain_failure_does_not_stop_the_run(self, mocks) -> None:
+        # One rejected day is Garmin's opinion of that day; only a rate limit says
+        # something about every day still to come.
+        fetch, _read, write = mocks
+        fetch.return_value = [_record("2026-10-20"), _record("2026-10-21")]
+        write.side_effect = [{"error": "upload refused", "written": False}, {"written": True, "verified": True}]
+
+        with patch.object(weight_sync.time, "sleep"):
+            result = weight_sync.sync_weight()
+
+        assert write.call_count == 2
+        assert [item["date"] for item in result["written"]] == ["2026-10-21"]
+        assert "stopped_early" not in result

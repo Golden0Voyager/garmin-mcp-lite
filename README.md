@@ -227,8 +227,8 @@ Details worth knowing:
 - **A re-run writes nothing.** Days Garmin already has are skipped, so a repeat call after a crash or a double-click is harmless.
 - **Implausible weights are refused.** Garmin keeps every entry forever, so before writing, each weight is checked: with ≥3 Garmin weigh-ins inside the window, anything more than ±40% off their median is skipped (a 斤 mis-read is exactly 2× kg); without Garmin history, weights outside 30–250 kg are skipped. Refusals are listed with the reason — write one deliberately with `garmin_add_body_composition` if it was genuine.
 - **Deleting a weigh-in in Mi Fitness does not delete it from Garmin.** There is no delete path here; remove stray entries in the Garmin Connect app.
-- **Writes are paced 0.5 s apart.** A first 90-day backfill is ~90 uploads; without the pause Garmin answers the burst with a 429 (which then locks the IP for hours).
-- **A `warning` about unverifiable writes means timezone trouble.** Each write is confirmed by reading the day back; if writes keep coming back unverifiable, the machine running this server likely has a different timezone than the Garmin account, and duplicates may accumulate — align the timezones before syncing again.
+- **Writes are paced 0.5 s apart, and a 429 is waited out.** A first 90-day backfill is ~90 uploads; the pause keeps the burst under Garmin's limiter, and if it answers 429 anyway the write is retried — three tries, doubling, honouring Garmin's own `Retry-After` up to 30 s. A run that still gets refused stops with `stopped_early` instead of hammering the queue, which is safe because every day already written is skipped next time.
+- **The account's timezone is read off the rows, not configured.** garminconnect writes the timestamp into the FIT file as if it were the machine's local time, while Garmin renders it in the account's zone, so a sync run from a laptop abroad used to file every weighing hours off — and then fail to recognise it next time. The zone is now derived from `date` minus `timestampGMT` on the rows already stored, and the report's `garmin.account_offset_hours` says whether it worked (`null` = the window held nothing to calibrate against, and the timestamps went out unchanged).
 
 The Xiaomi token is cached at `~/.garmin-mcp-lite/xiaomi.json` (mode 600), next to the Garmin token. It expires when you change your Xiaomi password or trigger a security check — re-run the login command when that happens. Note that the token grants account-level access, so treat the file like a password.
 
@@ -375,6 +375,26 @@ python test_e2e.py
 | Schema cost | High | ~2.5k tokens for all 20 tools |
 
 ## Changelog
+
+### 0.1.9
+- Fix: a weighing written from a machine in another timezone landed at the wrong
+  hour. garminconnect builds the FIT file with `time.mktime(dt.timetuple())`,
+  which reads a naive datetime as the *machine's* local time, while Garmin
+  renders the result in the *account's* display zone — measured on the live
+  account, the same 07:30 sent from a laptop in New York came back as 19:30.
+  `garmin_sync_weight` now reads the account's zone off the rows already stored
+  (`date` minus `timestampGMT`, which *is* the zone) and sends the instant that
+  comes back as the wall clock the scale showed. Nothing is configured, nothing
+  can go stale, and `garmin.account_offset_hours` reports what it calibrated to.
+- Fix: a 429 lost the rest of a backfill. garminconnect retries 5xx and network
+  errors itself but hands a 429 straight back by design ("caller actionable"), so
+  a first sync of a long window could stop halfway and report every remaining day
+  as failed. Writes now wait it out — three tries, doubling, preferring Garmin's
+  own `Retry-After` and capping it at 30 s — and a run that is still refused stops
+  with `stopped_early` instead of hammering the queue.
+- Fix: `72.8` was stored as `72.79`. garminconnect's FIT encoder truncates a float
+  into a hundredths field rather than rounding it, so every value is padded by a
+  millionth before upload.
 
 ### 0.1.8
 - New: `garmin_sync_healthkit` — copies weigh-ins that an iPhone Shortcut mirrored

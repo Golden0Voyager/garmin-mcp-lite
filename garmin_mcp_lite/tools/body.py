@@ -1,4 +1,5 @@
-from datetime import datetime
+import time
+from datetime import UTC, datetime
 from typing import Any
 
 from garmin_mcp_lite.client import get_client
@@ -13,6 +14,19 @@ _GRAMS_PER_KG = 1000.0
 
 # A body-composition entry is a point measurement, so the useful window is short.
 _MAX_DAYS = 730
+
+# garminconnect writes a float into a FIT field that holds hundredths, truncating
+# rather than rounding, so 72.8 would be stored as 72.79. Padding by a hair makes
+# the truncation land on the number the user actually weighed.
+_FIT_HEADROOM = 1e-6
+
+# Garmin answers 429 when writes arrive too fast. garminconnect retries 5xx and
+# network errors itself but hands a 429 straight back — "caller actionable" — so
+# the waiting is this module's job. Three tries, doubling, capped so a hostile
+# Retry-After header cannot hang a tool call.
+_RATE_LIMIT_ATTEMPTS = 3
+_RATE_LIMIT_WAIT_S = 2.0
+_RATE_LIMIT_MAX_WAIT_S = 30.0
 
 
 def _to_kg(value: Any) -> float | None:
@@ -145,6 +159,15 @@ def _validate_weight(weight: float) -> float:
     return value
 
 
+def _fit_scaled(value: float) -> float:
+    """Pad a value so garminconnect's FIT encoder truncates to it, not below it."""
+    return round(float(value), 2) + _FIT_HEADROOM
+
+
+def _fit_optional(value: float | None) -> float | None:
+    return None if value is None else _fit_scaled(value)
+
+
 def _resolve_timestamp(date: str | None) -> str:
     if not date:
         return datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
@@ -174,6 +197,91 @@ def _existing_on(client: Any, day: str) -> dict[str, Any] | None:
     return None
 
 
+def _ms(value: Any) -> float | None:
+    """A millisecond timestamp field as seconds, or None when unusable."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        return None
+    return float(value) / 1000.0
+
+
+def _row_offset(row: dict[str, Any]) -> float | None:
+    """The account's zone offset this row proves, in seconds.
+
+    Garmin reports each weigh-in twice: `date` is the wall clock in the account's
+    display zone, `timestampGMT` the true instant. Their difference *is* the zone,
+    which is what makes every write self-calibrating instead of one more setting
+    to get wrong. Measured on a China account: exactly 28,800,000 ms apart.
+    """
+    wall, instant = _ms(row.get("date")), _ms(row.get("timestampGMT"))
+    if wall is None or instant is None:
+        return None
+    return wall - instant
+
+
+def _day_state(client: Any, day: str) -> dict[str, Any]:
+    """What Garmin holds on `day`: the entry already there, and its zone offset."""
+    try:
+        payload = as_dict(client.get_body_composition(day, day))
+    except Exception:
+        return {}
+    state: dict[str, Any] = {}
+    offsets: list[float] = []
+    for row in as_list(payload.get("dateWeightList")):
+        if not isinstance(row, dict):
+            continue
+        offset = _row_offset(row)
+        if offset is not None:
+            offsets.append(offset)
+        if "existing" not in state:
+            weight = _to_kg(row.get("weight"))
+            if weight is not None:
+                state["existing"] = {"weight_kg": weight, "source": row.get("sourceType")}
+    if offsets:
+        state["offset_s"] = sorted(offsets)[len(offsets) // 2]
+    return state
+
+
+def _account_offset(client: Any, start: str, end: str) -> float | None:
+    """The account's zone, read off every row in a window, in seconds.
+
+    A single day proves nothing when it is empty, and one row that arrived by some
+    other route should not decide where every weighing lands, so the median over
+    the window is used. None when the window holds no usable pair — the caller
+    then leaves the timestamp alone rather than guessing at a shift.
+    """
+    try:
+        payload = as_dict(client.get_body_composition(start, end))
+    except Exception:
+        return None
+    offsets = [
+        offset
+        for row in as_list(payload.get("dateWeightList"))
+        if isinstance(row, dict) and (offset := _row_offset(row)) is not None
+    ]
+    return sorted(offsets)[len(offsets) // 2] if offsets else None
+
+
+def _sendable(timestamp: str, offset_s: float | None) -> str:
+    """The date string that makes Garmin store `timestamp` as the wall clock.
+
+    garminconnect builds the FIT file with `time.mktime(dt.timetuple())`, which
+    reads a naive datetime as the *machine's* local time, and Garmin then renders
+    that instant in the *account's* display zone. The two agree only while the
+    machine sits in the account's zone — measured on the live account: the same
+    07:30 sent from a laptop in New York came back as 19:30, twelve hours off,
+    after which it no longer matched the scale and was written a second time.
+
+    So what goes out is the instant, expressed in whatever zone this machine is
+    in. With a matching zone the string is the timestamp itself, and with no zone
+    known — `offset_s` is None — it is left alone rather than guessed at.
+    """
+    if not offset_s:
+        return timestamp
+    wall = datetime.fromisoformat(timestamp)
+    instant = wall.replace(tzinfo=UTC).timestamp() - offset_s
+    return datetime.fromtimestamp(instant).isoformat()
+
+
 def _upload_status(raw: Any) -> str | None:
     """Pull the per-file status out of Garmin's FIT import response."""
     import_result = as_dict(as_dict(raw).get("detailedImportResult"))
@@ -181,6 +289,68 @@ def _upload_status(raw: Any) -> str | None:
         if isinstance(upload, dict) and upload.get("status"):
             return str(upload["status"])
     return None
+
+
+def _chain(exc: BaseException) -> list[BaseException]:
+    """`exc` and every error it was raised from, outermost first."""
+    links: list[BaseException] = []
+    current: BaseException | None = exc
+    while current is not None and not any(current is link for link in links):
+        links.append(current)
+        current = current.__cause__ or current.__context__
+    return links
+
+
+def _rate_limited(exc: BaseException) -> bool:
+    """Whether Garmin refused this request for going too fast.
+
+    garminconnect 0.3 raises a dedicated error for it but attaches no response,
+    and the HTTP error it wraps still carries the status — so both the type name
+    and the status code are checked, which also covers the older releases that
+    let the raw HTTP error through.
+    """
+    for link in _chain(exc):
+        if type(link).__name__ == "GarminConnectTooManyRequestsError":
+            return True
+        if getattr(getattr(link, "response", None), "status_code", None) == 429:
+            return True
+    return False
+
+
+def _retry_after(exc: BaseException) -> float | None:
+    """The wait Garmin asked for, when it bothered to say."""
+    for link in _chain(exc):
+        headers = getattr(getattr(link, "response", None), "headers", None)
+        if not headers:
+            continue
+        header = headers.get("Retry-After")
+        if header is None:
+            continue
+        try:
+            return float(header)
+        except ValueError:  # an HTTP-date, or a proxy's idea of a joke
+            continue
+    return None
+
+
+def _upload(client: Any, **fields: Any) -> Any:
+    """Upload one FIT file, waiting out a rate limit instead of dropping the write.
+
+    A 429 is the one failure garminconnect declines to retry — it hands it back as
+    "caller actionable" — and the one failure a bulk backfill provokes. This is
+    that caller. A timeout is deliberately *not* retried here: it may have landed,
+    and a duplicate weighing is worse than a gap the next sync fills by itself.
+    """
+    attempt = 0
+    while True:
+        try:
+            return client.add_body_composition(**fields)
+        except Exception as exc:
+            attempt += 1
+            if attempt >= _RATE_LIMIT_ATTEMPTS or not _rate_limited(exc):
+                raise
+            wait = _retry_after(exc) or _RATE_LIMIT_WAIT_S * 2 ** (attempt - 1)
+            time.sleep(min(wait, _RATE_LIMIT_MAX_WAIT_S))
 
 
 def add_body_composition(
@@ -218,11 +388,45 @@ def add_body_composition(
         basal_met: Basal metabolic rate in kcal/day.
         metabolic_age: Metabolic age in years.
     """
-    value = _validate_weight(weight)
-    timestamp = _resolve_timestamp(date)
+    return _write_composition(
+        get_client(),
+        value=_validate_weight(weight),
+        timestamp=_resolve_timestamp(date),
+        body_fat=body_fat,
+        body_water=body_water,
+        muscle_mass=muscle_mass,
+        bone_mass=bone_mass,
+        bmi=bmi,
+        basal_met=basal_met,
+        metabolic_age=metabolic_age,
+        account_offset_s=None,
+    )
+
+
+def _write_composition(
+    client: Any,
+    *,
+    value: float,
+    timestamp: str,
+    body_fat: float | None = None,
+    body_water: float | None = None,
+    muscle_mass: float | None = None,
+    bone_mass: float | None = None,
+    bmi: float | None = None,
+    basal_met: float | None = None,
+    metabolic_age: int | None = None,
+    account_offset_s: float | None = None,
+) -> dict:
+    """Upload one measurement and report what Garmin did with it.
+
+    Split out from `add_body_composition` so the sync can pass an account zone it
+    calibrated from a whole window; the public tool has no such thing to give and
+    leaves it to be read off the day's own rows. `day` and the echoed `timestamp`
+    are always the wall clock the caller meant — only the FIT file carries the
+    translated instant.
+    """
     day = timestamp[:10]
 
-    client = get_client()
     # add_body_composition() is absent from the oldest garminconnect releases this
     # package still allows, and would otherwise surface as an opaque AttributeError.
     if not callable(getattr(client, "add_body_composition", None)):
@@ -231,22 +435,30 @@ def add_body_composition(
             "written": False,
         }
 
-    existing = _existing_on(client, day)
+    state = _day_state(client, day)
+    existing = state.get("existing")
+    offset_s = account_offset_s if account_offset_s is not None else state.get("offset_s")
 
     try:
-        raw = client.add_body_composition(
-            timestamp=timestamp,
-            weight=value,
-            percent_fat=body_fat,
-            percent_hydration=body_water,
-            muscle_mass=muscle_mass,
-            bone_mass=bone_mass,
-            bmi=bmi,
+        raw = _upload(
+            client,
+            timestamp=_sendable(timestamp, offset_s),
+            weight=_fit_scaled(value),
+            percent_fat=_fit_optional(body_fat),
+            percent_hydration=_fit_optional(body_water),
+            muscle_mass=_fit_optional(muscle_mass),
+            bone_mass=_fit_optional(bone_mass),
+            bmi=_fit_optional(bmi),
             basal_met=basal_met,
             metabolic_age=metabolic_age,
         )
     except Exception as e:
-        return {"error": str(e), "written": False}
+        error: dict[str, Any] = {"error": str(e), "written": False}
+        if _rate_limited(e):
+            # The caller needs to tell "this one write failed" apart from "Garmin
+            # is refusing everything now", or it will hammer the remaining queue.
+            error["rate_limited"] = True
+        return error
 
     result: dict[str, Any] = {"written": True, "date": day, "timestamp": timestamp, "weight_kg": value}
     for key, field_value in (
