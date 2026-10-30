@@ -205,7 +205,10 @@ def check_sync_healthkit() -> None:
             return
         raise RuntimeError(result["error"])
     bridge = result["bridge"]
-    print(f"  桥接文件 {bridge['parsed']} 条 / {bridge['days']} 天（重复 {bridge['duplicate_timestamps']} 条）")
+    print(
+        f"  桥接文件 {bridge['parsed']} 行 / {bridge['measurements']} 条记录 / {bridge['days']} 天"
+        f"（同刻重复 {bridge['duplicate_timestamps']} 行，双上传合并 {bridge['duplicates_merged']} 条）"
+    )
     for item in result["written"][:5]:
         print(f"    {item['date']}: {item['weight_kg']} kg")
 
@@ -222,9 +225,15 @@ def check_sync_weight() -> None:
             return
         raise RuntimeError(result["error"])
 
-    xiaomi = result["xiaomi"]
-    print(f"  小米侧 {xiaomi['weigh_ins']} 次称重 / {xiaomi['days']} 天（同一天折叠 {xiaomi['same_day_collapsed']} 次）")
-    print(f"  待写入 {len(result['written'])} 天 | Garmin 已有 {len(result['skipped'])} 天")
+    xiaomi, garmin = result["xiaomi"], result["garmin"]
+    print(
+        f"  小米侧 {xiaomi['weigh_ins']} 次称重 / {xiaomi['measurements']} 条记录 / {xiaomi['days']} 天"
+        f"（双上传合并 {xiaomi['duplicates_merged']} 条）"
+    )
+    print(f"  待写入 {len(result['written'])} 条 | Garmin 已有 {garmin['weigh_ins_already_present']} 条")
+    print(
+        f"  账号时区偏移 {garmin['account_offset_hours']} h | 合理性基线 {garmin['plausibility_baseline_kg']} kg"
+    )
     for item in result["written"][:5]:
         print(f"    {item['date']}: {item['weight_kg']} kg")
     if result.get("note"):

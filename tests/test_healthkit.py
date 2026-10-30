@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
@@ -36,15 +36,25 @@ def _garmin_history(days_weights: dict[str, float]) -> dict:
     return {"records": [{"date": day, "weight_kg": w} for day, w in days_weights.items()]}
 
 
+def _wall(day: str, time: str = "09:00:00") -> float:
+    """A wall-clock moment as the seconds Garmin's `date` field reduces to."""
+    return datetime.fromisoformat(f"{day}T{time}").replace(tzinfo=UTC).timestamp()
+
+
 @pytest.fixture()
 def mocks():
     with (
         patch.object(healthkit, "get_body_composition") as read,
-        patch.object(healthkit, "add_body_composition") as write,
+        patch.object(healthkit, "_write_composition") as write,
+        patch.object(healthkit, "get_client"),
+        patch.object(healthkit, "_account_offset") as offset,
+        patch.object(healthkit, "_window_clocks") as clocks,
         patch.object(healthkit.time, "sleep"),
     ):
         read.return_value = {"records": []}
         write.return_value = {"written": True, "verified": True}
+        offset.return_value = None
+        clocks.return_value = {}
         yield read, write
 
 
@@ -112,7 +122,7 @@ class TestParsing:
 
         assert result["bridge"]["days"] == 1
         assert write.call_count == 1
-        assert write.call_args.kwargs["weight"] == 71.9
+        assert write.call_args.kwargs["value"] == 71.9
 
     def test_date_only_line_is_read_as_7am(self, bridge_file: Path, mocks) -> None:
         _read, write = mocks
@@ -122,7 +132,7 @@ class TestParsing:
 
         healthkit.sync_healthkit()
 
-        assert write.call_args.kwargs["date"] == "2026-10-25T07:00:00"
+        assert write.call_args.kwargs["timestamp"] == "2026-10-25T07:00:00"
 
     def test_bad_timestamp_line_is_skipped(self, bridge_file: Path, mocks) -> None:
         _read, write = mocks
@@ -203,7 +213,7 @@ class TestWindow:
         result = healthkit.sync_healthkit(days=30)
 
         assert result["bridge"]["days"] == 1
-        assert write.call_args.kwargs["weight"] == 72.0
+        assert write.call_args.kwargs["value"] == 72.0
 
     def test_window_is_capped_at_90(self, bridge_file: Path, mocks) -> None:
         _read, _write = mocks
@@ -220,7 +230,8 @@ class TestSyncSemantics:
         bridge_file.write_text(_line("2026-10-25"), encoding="utf-8")
         read.return_value = _garmin_history({"2026-10-25": 72.2})
 
-        result = healthkit.sync_healthkit()
+        with patch.object(healthkit, "_window_clocks", return_value={"2026-10-25": [_wall("2026-10-25")]}):
+            result = healthkit.sync_healthkit()
 
         assert result["skipped"][0]["reason"] == "already on Garmin"
         write.assert_not_called()
@@ -237,7 +248,8 @@ class TestSyncSemantics:
         assert result["garmin"]["plausibility_baseline_kg"] == 71.9
         write.assert_not_called()
 
-    def test_keeps_only_the_earliest_weigh_in_of_a_day(self, bridge_file: Path, mocks) -> None:
+    def test_every_weighing_of_a_day_gets_its_own_entry(self, bridge_file: Path, mocks) -> None:
+        # Morning and evening are two measurements, not one reported twice.
         _read, write = mocks
         bridge_file.write_text(
             "\n".join([_line("2026-10-25", 72.4, time="21:30:00"), _line("2026-10-25", 72.2, time="07:10:00")]),
@@ -246,22 +258,22 @@ class TestSyncSemantics:
 
         result = healthkit.sync_healthkit()
 
-        assert result["bridge"]["same_day_collapsed"] == 1
-        assert write.call_args.kwargs["weight"] == 72.2
+        assert write.call_count == 2
+        assert result["bridge"]["duplicates_merged"] == 0
+        assert [item["time"][-8:] for item in result["written"]] == ["07:10:00", "21:30:00"]
 
-    def test_collapses_later_weigh_ins_that_arrive_in_order(self, bridge_file: Path, mocks) -> None:
+    def test_a_second_weighing_lands_beside_the_first(self, bridge_file: Path, mocks) -> None:
         _read, write = mocks
-        # Chronological order exercises the other collapse branch: the day is
-        # already set by an earlier record and the later one is folded away.
         bridge_file.write_text(
             "\n".join([_line("2026-10-25", 72.2, time="07:10:00"), _line("2026-10-25", 72.4, time="21:30:00")]),
             encoding="utf-8",
         )
+        with patch.object(healthkit, "_window_clocks", return_value={"2026-10-25": [_wall("2026-10-25", "07:10:00")]}):
+            result = healthkit.sync_healthkit()
 
-        result = healthkit.sync_healthkit()
-
-        assert result["bridge"]["same_day_collapsed"] == 1
-        assert write.call_args.kwargs["weight"] == 72.2
+        assert write.call_count == 1
+        assert write.call_args.kwargs["timestamp"] == "2026-10-25T21:30:00"
+        assert result["skipped"][0]["reason"] == "already on Garmin"
 
     def test_dry_run_writes_nothing(self, bridge_file: Path, mocks) -> None:
         _read, write = mocks
@@ -309,3 +321,52 @@ class TestSyncSemantics:
         result = healthkit.sync_healthkit()
 
         assert "Shortcut" in result["note"]
+
+
+class TestGarminFailure:
+    """The Garmin side being broken must not take the bridge down with it."""
+
+    def test_a_missing_garmin_token_is_reported_not_raised(self, bridge_file: Path, mocks) -> None:
+        _read, write = mocks
+        bridge_file.write_text(_line("2026-10-25"), encoding="utf-8")
+
+        with patch.object(healthkit, "get_client", side_effect=RuntimeError("Garmin token not found")):
+            result = healthkit.sync_healthkit()
+
+        assert "Garmin token not found" in result["error"]
+        write.assert_not_called()
+
+    def test_an_unreadable_zone_does_not_stop_the_sync(self, bridge_file: Path, mocks) -> None:
+        _read, write = mocks
+        bridge_file.write_text(_line("2026-10-25"), encoding="utf-8")
+
+        with patch.object(healthkit, "_account_offset", side_effect=RuntimeError("read down")):
+            result = healthkit.sync_healthkit()
+
+        assert write.call_count == 1
+        assert write.call_args.kwargs["account_offset_s"] is None
+        assert result["garmin"]["account_offset_hours"] is None
+
+    def test_an_old_garminconnect_falls_back_to_the_day_summary(self, bridge_file: Path, mocks) -> None:
+        read, write = mocks
+        bridge_file.write_text(_line("2026-10-25"), encoding="utf-8")
+        read.return_value = _garmin_history({"2026-10-25": 72.2})
+
+        with patch.object(healthkit, "_window_clocks", side_effect=AttributeError("no get_weigh_ins")):
+            result = healthkit.sync_healthkit()
+
+        assert result["written"] == []
+        write.assert_not_called()
+
+    def test_a_rate_limited_write_stops_the_run(self, bridge_file: Path, mocks) -> None:
+        _read, write = mocks
+        bridge_file.write_text(
+            "\n".join([_line("2026-10-24", 71.9), _line("2026-10-25", 72.2)]),
+            encoding="utf-8",
+        )
+        write.side_effect = [{"error": "Rate limit exceeded", "written": False, "rate_limited": True}]
+
+        result = healthkit.sync_healthkit()
+
+        assert write.call_count == 1  # the second weighing is never attempted
+        assert "rate-limited the run after 0 writes" in result["stopped_early"]

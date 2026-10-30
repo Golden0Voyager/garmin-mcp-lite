@@ -7,10 +7,11 @@ reads that file and fills Garmin's gaps.
 
 Confirm the app actually writes before setting any of this up. 蚂蚁阿福, the
 scale this bridge was first built for, never does: its app has no sync switch
-and Health lists no write access for it, so the bridge had nothing to read. The write path is exactly the Xiaomi sync's —
-per-day dedup against Garmin, a plausibility gate before writing, paced
-uploads, read-back verification — because undoing a bad weigh-in is equally
-impossible whichever scale produced it.
+and Health lists no write access for it, so the bridge had nothing to read. The
+write path is exactly the Xiaomi sync's — one entry per weighing, matched back
+against Garmin by the moment it was taken, a plausibility gate before writing,
+paced uploads, read-back verification — because undoing a bad weigh-in is
+equally impossible whichever scale produced it.
 
 The bridge file is append-only: this tool never edits or truncates it, so a
 re-run is harmless and lines may repeat. One JSON object per line:
@@ -32,12 +33,18 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from garmin_mcp_lite.tools.body import add_body_composition, get_body_composition
+from garmin_mcp_lite.client import get_client
+from garmin_mcp_lite.tools._common import days_ago_str, today_str
+from garmin_mcp_lite.tools.body import _account_offset, _write_composition, get_body_composition
 from garmin_mcp_lite.tools.weight_sync import (
     _MAX_DAYS,
     _WRITE_PAUSE_S,
+    _already_on_garmin,
     _baseline_weight,
     _implausibility,
+    _measurement_clock,
+    _merge_duplicates,
+    _window_clocks,
 )
 
 # iCloud Drive's macOS mount point; the Shortcut appends to a file under a
@@ -154,11 +161,14 @@ def sync_healthkit(days: int = 30, dry_run: bool = False) -> dict:
     Requires the one-time iPhone Shortcut described in the README's "Apple
     Health bridge" section; the file it appends to is the only input.
 
-    The same guarantees as `garmin_sync_weight`: only days Garmin lacks are
-    written (idempotent), only the earliest weigh-in of a day is used,
-    implausible weights are refused rather than written, writes are paced, and
-    each write is confirmed by reading the day back. `verified: false` days
-    raise the same timezone-mismatch warning.
+    The same guarantees as `garmin_sync_weight`: every weighing becomes its own
+    entry with the time it was taken (a morning and an evening weighing are two
+    measurements, not one), a weighing Garmin already holds — same moment within
+    three minutes — is skipped so re-runs write nothing, implausible weights are
+    refused rather than written, writes are paced, and each write is confirmed by
+    reading the day back. The only lines folded together are the scale's double
+    upload, a weight-only row followed seconds later by the full one. `verified:
+    false` entries raise the same timezone-mismatch warning.
 
     THIS WRITES TO YOUR GARMIN ACCOUNT unless `dry_run` is true. Call with
     `dry_run=true` first when the user has not seen the numbers yet.
@@ -198,54 +208,72 @@ def sync_healthkit(days: int = 30, dry_run: bool = False) -> dict:
     cutoff = (datetime.now() - timedelta(days=window)).strftime("%Y-%m-%d")
     in_window = [record for record in unique if record["date"] >= cutoff]
 
-    # One entry per day: the earliest, the same fasted-morning rule as the
-    # Xiaomi sync.
-    by_day: dict[str, dict[str, Any]] = {}
-    collapsed = 0
-    for record in in_window:
-        day = record["date"]
-        current = by_day.get(day)
-        if current is None:
-            by_day[day] = record
-        elif str(record["timestamp"]) < str(current["timestamp"]):
-            by_day[day] = record
-            collapsed += 1
-        else:
-            collapsed += 1
+    # Every weighing becomes its own entry, the same rule as the Xiaomi sync:
+    # morning and evening are two measurements. Only the same moment reported
+    # twice — a shortcut triggered twice — is folded into one.
+    measurements, collapsed = _merge_duplicates(in_window)
 
     existing = get_body_composition(days=window, limit=window * 4)
     if "error" in existing:
         return {"error": f"Could not read Garmin body composition: {existing['error']}", "written": []}
-    have = {str(record.get("date")) for record in existing.get("records", []) if record.get("date")}
     baseline = _baseline_weight(existing)
+
+    try:
+        client = get_client()
+    except Exception as exc:
+        return {"error": str(exc), "written": []}
+
+    try:
+        offset_s = _account_offset(client, days_ago_str(window), today_str())
+    except Exception:
+        offset_s = None
+
+    try:
+        days_clocks = _window_clocks(client, days_ago_str(window), today_str())
+    except Exception:
+        days_clocks = {str(record.get("date")): [None] for record in existing.get("records", []) if record.get("date")}
 
     written: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
     write_attempts = 0
+    summary_stop: str | None = None
 
-    for day in sorted(by_day):
-        record = by_day[day]
-        if day in have:
-            skipped.append({"date": day, "reason": "already on Garmin", "weight_kg": record["weight_kg"]})
+    for record in measurements:
+        day = record["date"]
+        clock = _measurement_clock(record)
+        if _already_on_garmin(days_clocks.get(day, []), clock):
+            skipped.append(
+                {
+                    "date": day,
+                    "time": record["timestamp"],
+                    "reason": "already on Garmin",
+                    "weight_kg": record["weight_kg"],
+                }
+            )
             continue
 
         reason = _implausibility(float(record["weight_kg"]), baseline)
         if reason is not None:
-            skipped.append({"date": day, "reason": reason, "weight_kg": record["weight_kg"]})
+            skipped.append(
+                {"date": day, "time": record["timestamp"], "reason": reason, "weight_kg": record["weight_kg"]}
+            )
             continue
 
         if dry_run:
-            written.append({"date": day, "weight_kg": record["weight_kg"], "would_write": True})
+            written.append(
+                {"date": day, "time": record["timestamp"], "weight_kg": record["weight_kg"], "would_write": True}
+            )
             continue
 
         if write_attempts:
             time.sleep(_WRITE_PAUSE_S)
         write_attempts += 1
 
-        result = add_body_composition(
-            weight=record["weight_kg"],
-            date=str(record["timestamp"]),
+        result = _write_composition(
+            client,
+            value=record["weight_kg"],
+            timestamp=str(record["timestamp"]),
             body_fat=record.get("body_fat_pct"),
             body_water=record.get("body_water_pct"),
             muscle_mass=record.get("muscle_mass_kg"),
@@ -253,19 +281,31 @@ def sync_healthkit(days: int = 30, dry_run: bool = False) -> dict:
             bmi=record.get("bmi"),
             basal_met=record.get("basal_met"),
             metabolic_age=int(record["metabolic_age"]) if record.get("metabolic_age") else None,
+            account_offset_s=offset_s,
         )
         if result.get("error"):
             failed.append({"date": day, "error": result["error"]})
-        else:
-            written.append(
-                {
-                    "date": day,
-                    "weight_kg": record["weight_kg"],
-                    "verified": result.get("verified"),
-                    "body_fat_pct": record.get("body_fat_pct"),
-                }
-            )
+            if result.get("rate_limited"):
+                # Same reasoning as the Xiaomi sync: hammering a rate limit only
+                # lengthens the block, and stopping is safe because a weighing
+                # already on Garmin is skipped next time.
+                summary_stop = (
+                    f"Garmin rate-limited the run after {len(written)} writes. Nothing is lost — "
+                    "re-run in a few minutes and it continues from there."
+                )
+                break
+            continue
+        written.append(
+            {
+                "date": day,
+                "time": record["timestamp"],
+                "weight_kg": record["weight_kg"],
+                "verified": result.get("verified"),
+                "body_fat_pct": record.get("body_fat_pct"),
+            }
+        )
 
+    already = [item for item in skipped if item["reason"] == "already on Garmin"]
     summary: dict[str, Any] = {
         "dry_run": bool(dry_run),
         "window_days": window,
@@ -275,27 +315,31 @@ def sync_healthkit(days: int = 30, dry_run: bool = False) -> dict:
             "parsed": len(records),
             "unparsed": unparsed,
             "duplicate_timestamps": duplicates,
-            "days": len(by_day),
-            "same_day_collapsed": collapsed,
+            "measurements": len(measurements),
+            "days": len({str(item["date"]) for item in measurements}),
+            "duplicates_merged": collapsed,
         },
         "garmin": {
-            "days_already_present": len(have & set(by_day)),
+            "weigh_ins_already_present": len(already),
             "plausibility_baseline_kg": baseline,
+            "account_offset_hours": None if offset_s is None else round(offset_s / 3600, 2),
         },
         "written": written,
         "skipped": skipped,
         "failed": failed,
     }
+    if summary_stop:
+        summary["stopped_early"] = summary_stop
 
     unverified = [item for item in written if item.get("verified") is False]
     if unverified:
         summary["warning"] = (
-            f"{len(unverified)} day(s) were written but could not be read back afterwards. If this repeats "
-            "across runs, the machine running this server likely has a different timezone than the Garmin "
-            "account, and duplicate entries may accumulate — align the timezones before syncing again."
+            f"{len(unverified)} entr(ies) were written but could not be read back afterwards. If this repeats "
+            "across runs, the account's timezone could not be calibrated from its own rows and duplicate "
+            "entries may accumulate — check garmin.account_offset_hours before syncing again."
         )
 
-    if not by_day and not skipped:
+    if not measurements and not skipped:
         summary["note"] = (
             "The bridge file holds no weigh-ins in this window. Weigh in, let the 阿福 app sync to Apple "
             "Health, then run the Shortcut (or check that its automation is enabled and the file path matches)."

@@ -219,12 +219,12 @@ Then ask your assistant:
 
 > sync my weight from the Xiaomi scale (dry run first)
 
-`dry_run=true` reports what would be written and writes nothing. Real runs write each day as a FIT body-composition file, the same channel a Garmin Index scale uses, and confirm each one by reading the day back.
+`dry_run=true` reports what would be written and writes nothing. Real runs write each weighing as a FIT body-composition file, the same channel a Garmin Index scale uses, and confirm each one by reading the day back.
 
 Details worth knowing:
 
-- **Only the earliest weigh-in of a day is used.** Morning, fasted weight is the one a trend line is about; later ones are reported as collapsed.
-- **A re-run writes nothing.** Days Garmin already has are skipped, so a repeat call after a crash or a double-click is harmless.
+- **Every weighing becomes its own entry, with the time it was taken.** Morning fasted and evening before bed are two measurements, ten weighings make ten entries — the same thing a Garmin Index scale does. The only rows folded together are the scale's double upload: a weight-only row followed seconds later by the full body-composition row, which is one measurement sent twice.
+- **A re-run writes nothing.** A weighing Garmin already holds — same moment within three minutes — is skipped, so a repeat call after a crash or a double-click is harmless. Matching is by moment rather than by day, which is what lets a second weighing on the same day through while still recognising the first.
 - **Implausible weights are refused.** Garmin keeps every entry forever, so before writing, each weight is checked: with ≥3 Garmin weigh-ins inside the window, anything more than ±40% off their median is skipped (a 斤 mis-read is exactly 2× kg); without Garmin history, weights outside 30–250 kg are skipped. Refusals are listed with the reason — write one deliberately with `garmin_add_body_composition` if it was genuine.
 - **Deleting a weigh-in in Mi Fitness does not delete it from Garmin.** There is no delete path here; remove stray entries in the Garmin Connect app.
 - **Writes are paced 0.5 s apart, and a 429 is waited out.** A first 90-day backfill is ~90 uploads; the pause keeps the burst under Garmin's limiter, and if it answers 429 anyway the write is retried — three tries, doubling, honouring Garmin's own `Retry-After` up to 30 s. A run that still gets refused stops with `stopped_early` instead of hammering the queue, which is safe because every day already written is skipped next time.
@@ -302,7 +302,7 @@ Ask your assistant to run `garmin_sync_healthkit` (dry run first). The default f
 | `unparsed` > 0 in the sync result | Missing trailing newline in the Text action glued two records together | The tool splits glued JSON objects automatically; still, add the newline |
 | A weigh-in never shows up | The scale app has not written it to Health yet | Back to Step 0: check the source in the Health app |
 
-The file is append-only and this tool never edits it: repeated lines, re-runs and double triggers are all harmless (duplicates collapse by timestamp, days collapse to the earliest weigh-in, days Garmin already has are skipped). Even if the Health app displays 斤 on your phone: the shortcut pins kilograms, and the plausibility gate would refuse a 2× value before it reaches Garmin.
+The file is append-only and this tool never edits it: repeated lines, re-runs and double triggers are all harmless (duplicate lines collapse by timestamp, the scale's double upload collapses to one measurement, and weighings Garmin already has are skipped). Even if the Health app displays 斤 on your phone: the shortcut pins kilograms, and the plausibility gate would refuse a 2× value before it reaches Garmin.
 
 ## Example Queries
 
@@ -395,6 +395,16 @@ python test_e2e.py
 - Fix: `72.8` was stored as `72.79`. garminconnect's FIT encoder truncates a float
   into a hundredths field rather than rounding it, so every value is padded by a
   millionth before upload.
+- Fix: a second weighing on the same day was dropped. The sync kept one entry per
+  day, so morning fasted and evening before bed collapsed into a single point —
+  which a Garmin Index scale does not do, and which silently lost data on any day
+  weighed twice. Every weighing is now its own entry with the time it was taken,
+  and dedup matches on the moment (within three minutes) instead of the day, which
+  is what lets the second one through while still recognising the first. The only
+  rows still folded together are the scale's double upload — a weight-only row
+  followed seconds later by the full body-composition row. Both syncs share the
+  rule, and the report's `measurements` / `days` / `duplicates_merged` counts make
+  the difference visible.
 
 ### 0.1.8
 - New: `garmin_sync_healthkit` — copies weigh-ins that an iPhone Shortcut mirrored
