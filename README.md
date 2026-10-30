@@ -60,7 +60,7 @@ It exposes **20 precisely-curated endpoints** for deep analysis of running, cycl
 | `garmin_body_composition` | Weight and body-composition history: weight, BMI, body fat %, body water %, muscle mass, bone mass, visceral fat, metabolic age. Mass is normalised to kilograms and unmeasured fields are omitted. |
 | `garmin_add_body_composition` | **Write** one measurement (weight required, everything else optional). Uploads a FIT body-composition file — the same channel Garmin's own Index scale uses. |
 | `garmin_sync_weight` | **Write** weigh-ins from a Xiaomi body-fat scale into Garmin. Only days Garmin does not already have are written, so it is idempotent. Needs a one-time `garmin-mcp-lite-xiaomi-login`. |
-| `garmin_sync_healthkit` | **Write** weigh-ins that an iPhone Shortcut mirrored from Apple Health into Garmin — for scales whose app (蚂蚁阿福, etc.) has no cloud this server can read. Same idempotent, plausibility-checked write path. See [Apple Health bridge](#syncing-a-xiaomi-body-fat-scale). |
+| `garmin_sync_healthkit` | **Write** weigh-ins that an iPhone Shortcut mirrored from Apple Health into Garmin — for scales whose app writes to Apple Health but has no cloud this server can read. Same idempotent, plausibility-checked write path. See [Apple Health bridge](#syncing-a-xiaomi-body-fat-scale). |
 
 > **`garmin_add_body_composition` writes to your Garmin account.** There is no undo through this tool. Garmin keeps every entry, so calling it twice for the same day can leave two weigh-ins; the response warns you when that day already had one. `weight` is in **kilograms** — values above 500 are rejected as an accidental gram value, because the read tool returns grams at the API level and a read-modify-write is the obvious way to get this wrong. Garmin's upload endpoint does not always report a status, so the tool reads the day back and returns `verified: true` only when the stored weight matches what it sent.
 
@@ -379,7 +379,8 @@ python test_e2e.py
 ### 0.1.8
 - New: `garmin_sync_healthkit` — copies weigh-ins that an iPhone Shortcut mirrored
   from Apple Health (one JSON line per measurement in an iCloud Drive file) into
-  Garmin. Built for scales whose app has no readable cloud, such as 蚂蚁阿福.
+  Garmin. Built for scales whose app has no readable cloud but does write to
+  Apple Health — check that first: 蚂蚁阿福, the original target, turned out not to.
   Shares the Xiaomi sync's per-day dedup, plausibility gate, paced writes and
   read-back verification; the bridge file is append-only and never edited by the
   tool, so re-runs and double triggers are harmless.

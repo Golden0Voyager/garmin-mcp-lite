@@ -1,9 +1,13 @@
 """Pull weigh-ins that an iPhone Shortcut mirrored from Apple Health into Garmin.
 
-Any scale whose app can write to Apple Health (蚂蚁阿福 among them) becomes a
-Garmin source through a file: a Shortcut automation appends each new Health
-sample as one JSON line to a file in iCloud Drive, and this tool reads that
-file and fills Garmin's gaps. The write path is exactly the Xiaomi sync's —
+Any scale whose app can write to Apple Health — Withings, Huawei Health, Yunmai,
+Renpho — becomes a Garmin source through a file: a Shortcut automation appends
+each new Health sample as one JSON line to a file in iCloud Drive, and this tool
+reads that file and fills Garmin's gaps.
+
+Confirm the app actually writes before setting any of this up. 蚂蚁阿福, the
+scale this bridge was first built for, never does: its app has no sync switch
+and Health lists no write access for it, so the bridge had nothing to read. The write path is exactly the Xiaomi sync's —
 per-day dedup against Garmin, a plausibility gate before writing, paced
 uploads, read-back verification — because undoing a bad weigh-in is equally
 impossible whichever scale produced it.
@@ -145,7 +149,8 @@ def sync_healthkit(days: int = 30, dry_run: bool = False) -> dict:
     """Copy weigh-ins bridged from Apple Health into Garmin Connect.
 
     Use this when the measurement came from a scale that is NOT bound to Mi
-    Fitness — e.g. the 蚂蚁阿福 scale — but whose app writes to Apple Health.
+    Fitness but whose app writes to Apple Health. Not every app does: 蚂蚁阿福
+    writes nothing at all, which is what the README's Step 0 check exists for.
     Requires the one-time iPhone Shortcut described in the README's "Apple
     Health bridge" section; the file it appends to is the only input.
 
