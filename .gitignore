@@ -24,4 +24,7 @@ scratch/
 htmlcov/
 
 # Agent workspace data (session notes, memory) — must never be packaged
+# hatchling's sdist takes everything git does not ignore, so an agent's local
+# settings file lands in the release unless it is listed here.
 .workbuddy-ai/
+.claude/
