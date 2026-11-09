@@ -19,6 +19,7 @@ from garmin_mcp_lite.tools import (
     training,
     weekly_stats,
     weight_sync,
+    workouts,
     zones,
 )
 
@@ -50,6 +51,9 @@ mcp.add_tool(hr_trend.get_hr_trend, name="garmin_hr_trend")
 mcp.add_tool(weekly_stats.get_weekly_stats, name="garmin_weekly_stats")
 mcp.add_tool(coach.get_coach_plans, name="garmin_coach")
 mcp.add_tool(events.get_events, name="garmin_events")
+mcp.add_tool(events.add_event, name="garmin_add_event")
+mcp.add_tool(events.delete_event, name="garmin_delete_event")
+mcp.add_tool(workouts.schedule_running_workout, name="garmin_schedule_running_workout")
 mcp.add_tool(challenges.get_challenges, name="garmin_challenges")
 mcp.add_tool(race_prediction.get_race_prediction, name="garmin_race_prediction")
 mcp.add_tool(records.get_personal_records, name="garmin_personal_records")
