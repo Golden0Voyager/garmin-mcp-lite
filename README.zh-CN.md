@@ -19,11 +19,11 @@
 
 精简版 Garmin MCP 服务器，专为耐力运动爱好者设计。
 
-提取了进行深度运动数据分析最核心的 20 个接口（涵盖跑步、骑行、游泳、健康及体成分数据），完美替代臃肿的 80+ 接口方案。
+提取了进行深度运动数据分析最核心的 23 个接口（涵盖跑步、骑行、游泳、健康及体成分数据），完美替代臃肿的 80+ 接口方案。
 
-其中 17 个是只读，三个会写入：`garmin_add_body_composition` 记一条手动体重，`garmin_sync_weight` 从小米体脂秤拉取，`garmin_sync_healthkit` 接收苹果健康桥接的数据 —— 因为 Garmin 没有接收第三方体重秤数据的入口。
+其中 17 个是只读，六个会写入：`garmin_add_body_composition` 记一条手动体重，`garmin_sync_weight` 从小米体脂秤拉取，`garmin_sync_healthkit` 接收苹果健康桥接的数据，`garmin_schedule_running_workout` 向日历写入并排期跑步课表，`garmin_add_event` / `garmin_delete_event` 添加和删除赛事日历。
 
-## 核心工具（20 个替代 80+）
+## 核心工具（23 个替代 80+）
 
 ### 🔧 状态自检
 
@@ -43,6 +43,7 @@
 | `garmin_coach` | Garmin Coach 训练计划概览 |
 | `garmin_race_prediction` | 5K/10K/半马/全马成绩预测（含配速），可看 90 天或 1 年内的变化 |
 | `garmin_personal_records` | 个人纪录：1K 到全马、最长跑/骑行、游泳、步数纪录，附创造纪录的活动 |
+| `garmin_schedule_running_workout` | **写入**结构化跑步课表（支持匀速跑、热身、间歇节奏段、冷身及配速区间）并排入 Garmin 日历 |
 
 ### 💚 健康
 
@@ -68,6 +69,8 @@
 | 工具 | 功能 |
 |:---|:---|
 | `garmin_events` | 赛事日历：仅未来的比赛（按日期升序），目标距离、目标完赛时间 |
+| `garmin_add_event` | **写入**比赛或赛事到 Garmin 日历（支持目标距离、目标完赛时间、主要赛事标记、地点等） |
+| `garmin_delete_event` | **删除**指定的日历赛事（按 event_id） |
 | `garmin_challenges` | 进行中的挑战：虚拟攀登、月度徽章及完成度 |
 
 ### ⌚ 设备与装备
