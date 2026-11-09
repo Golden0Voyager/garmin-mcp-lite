@@ -14,6 +14,7 @@ _TOOL_MODULES = [
     "garmin_mcp_lite.tools.body",
     "garmin_mcp_lite.tools.challenges",
     "garmin_mcp_lite.tools.coach",
+    "garmin_mcp_lite.tools.cycling",
     "garmin_mcp_lite.tools.device",
     "garmin_mcp_lite.tools.dive",
     "garmin_mcp_lite.tools.events",
@@ -24,6 +25,7 @@ _TOOL_MODULES = [
     "garmin_mcp_lite.tools.hrv",
     "garmin_mcp_lite.tools.race_prediction",
     "garmin_mcp_lite.tools.records",
+    "garmin_mcp_lite.tools.strength",
     "garmin_mcp_lite.tools.training",
     "garmin_mcp_lite.tools.weekly_stats",
     "garmin_mcp_lite.tools.weight_sync",
@@ -169,6 +171,68 @@ def _build_fake() -> MagicMock:
                 {"trainingMethod": "HR_RESERVE", "restingHeartRateUsed": 43, "lactateThresholdHeartRateUsed": 166, "zone1Floor": 130, "zone2Floor": 141, "zone3Floor": 155, "zone4Floor": 172, "zone5Floor": 183, "maxHeartRateUsed": 198, "sport": "RUNNING"},
                 {"trainingMethod": "HR_MAX", "restingHeartRateUsed": 43, "lactateThresholdHeartRateUsed": 160, "zone1Floor": 94, "zone2Floor": 113, "zone3Floor": 132, "zone4Floor": 150, "zone5Floor": 169, "maxHeartRateUsed": 188, "sport": "CYCLING"},
             ]
+        if path == "/activity-service/activity/88001":
+            return {
+                "activityId": 88001,
+                "activityName": "Road Cycling",
+                "startTimeLocal": "2026-11-06 14:50:34",
+                "activityType": {"typeKey": "cycling"},
+                "summaryDTO": {
+                    "duration": 3600.0,
+                    "distance": 30000.0,
+                    "averageSpeed": 8.33,
+                    "maxSpeed": 12.5,
+                    "avgPower": 165.0,
+                    "maxPower": 320.0,
+                    "normalizedPower": 178.0,
+                    "trainingStressScore": 68.5,
+                    "intensityFactor": 0.92,
+                    "averageBikeCadence": 85.0,
+                    "maxBikeCadence": 105.0,
+                    "elevationGain": 150.0,
+                    "averageHR": 142.0,
+                    "maxHR": 165.0,
+                    "calories": 620.0,
+                },
+            }
+        if path == "/activity-service/activity/88002":
+            return {
+                "activityId": 88002,
+                "activityName": "Strength Session",
+                "startTimeLocal": "2026-11-08 17:53:11",
+                "activityType": {"typeKey": "strength_training"},
+                "summaryDTO": {
+                    "duration": 2400.0,
+                    "averageHR": 85.0,
+                    "maxHR": 120.0,
+                    "calories": 180.0,
+                    "activityTrainingLoad": 5.0,
+                },
+            }
+        if path == "/activity-service/activity/88002/exerciseSets":
+            return {
+                "activityId": 88002,
+                "exerciseSets": [
+                    {
+                        "setType": "ACTIVE",
+                        "duration": 60.0,
+                        "repetitionCount": 10,
+                        "weight": 60000.0,
+                        "exercises": [{"category": "SQUAT", "name": "Back Squat"}],
+                    },
+                    {
+                        "setType": "REST",
+                        "duration": 90.0,
+                    },
+                    {
+                        "setType": "ACTIVE",
+                        "duration": 45.0,
+                        "repetitionCount": 12,
+                        "weight": 20000.0,
+                        "exercises": [{"category": "BENCH_PRESS", "name": "Dumbbell Press"}],
+                    },
+                ],
+            }
         if path == "/activity-service/activity/99001":
             return {
                 "activityId": 99001,
