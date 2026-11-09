@@ -23,6 +23,7 @@ _TOOL_MODULES = [
     "garmin_mcp_lite.tools.records",
     "garmin_mcp_lite.tools.training",
     "garmin_mcp_lite.tools.weekly_stats",
+    "garmin_mcp_lite.tools.workouts",
     "garmin_mcp_lite.tools.zones",
 ]
 
