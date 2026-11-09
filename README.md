@@ -20,11 +20,11 @@
 
 A lightweight Garmin Model Context Protocol (MCP) server, designed specifically for endurance athletes.
 
-It exposes **25 precisely-curated endpoints** for deep analysis of running, cycling, swimming, diving, and health data — replacing bulky 80+ endpoint alternatives with a clean, focused toolset.
+It exposes **28 precisely-curated endpoints** for deep analysis of running, cycling, swimming, diving, strength, and health data — replacing bulky 80+ endpoint alternatives with a clean, focused toolset.
 
-19 of them read. Six write: `garmin_add_body_composition` for a single manual weigh-in, `garmin_sync_weight` to pull them from a Xiaomi body-fat scale, `garmin_sync_healthkit` for scales whose apps write to Apple Health, `garmin_schedule_running_workout` to schedule structured running workouts to your Garmin calendar, and `garmin_add_event` / `garmin_delete_event` to manage race calendar events.
+21 of them read. Seven write: `garmin_add_body_composition` for a single manual weigh-in, `garmin_sync_weight` to pull them from a Xiaomi body-fat scale, `garmin_sync_healthkit` for scales whose apps write to Apple Health, `garmin_schedule_running_workout` / `garmin_schedule_cycling_workout` to schedule structured running and cycling workouts to your Garmin calendar, and `garmin_add_event` / `garmin_delete_event` to manage race calendar events.
 
-## Core Tools (25)
+## Core Tools (28)
 
 ### 🔧 Setup & Diagnosis
 
@@ -45,6 +45,9 @@ It exposes **25 precisely-curated endpoints** for deep analysis of running, cycl
 | `garmin_race_prediction` | Predicted 5K/10K/half/marathon finish times with pace, plus the change over a 90-day or 1-year window. |
 | `garmin_personal_records` | Personal bests (1K → marathon, longest run/ride, swim times, step records) with the activity that set each one. |
 | `garmin_schedule_running_workout` | **Write** a structured running workout (steady, warmup, intervals, cooldown with pace zones) and schedule it to your Garmin calendar. |
+| `garmin_schedule_cycling_workout` | **Write** a structured cycling workout with power/FTP targets and schedule it to your Garmin calendar. |
+| `garmin_cycling_power` | Get cycling FTP, power metrics (NP, IF, TSS), cadence, and recent rides. |
+| `garmin_strength_analysis` | Get strength training analysis: active sets, reps, volume load, muscle groups, and runner fatigue advice. |
 | `garmin_dive_logs` | Get freediving and scuba diving logs: max/avg depth, dive count, bottom time, water temperature, surface interval, and dive reflex minimum heart rate. |
 
 ### 💚 Health & Wellness

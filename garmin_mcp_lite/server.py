@@ -7,6 +7,7 @@ from garmin_mcp_lite.tools import (
     body,
     challenges,
     coach,
+    cycling,
     device,
     dive,
     events,
@@ -18,6 +19,7 @@ from garmin_mcp_lite.tools import (
     race_prediction,
     records,
     status,
+    strength,
     training,
     weekly_stats,
     weight_sync,
@@ -56,6 +58,9 @@ mcp.add_tool(events.get_events, name="garmin_events")
 mcp.add_tool(events.add_event, name="garmin_add_event")
 mcp.add_tool(events.delete_event, name="garmin_delete_event")
 mcp.add_tool(workouts.schedule_running_workout, name="garmin_schedule_running_workout")
+mcp.add_tool(workouts.schedule_cycling_workout, name="garmin_schedule_cycling_workout")
+mcp.add_tool(cycling.get_cycling_power, name="garmin_cycling_power")
+mcp.add_tool(strength.get_strength_analysis, name="garmin_strength_analysis")
 mcp.add_tool(challenges.get_challenges, name="garmin_challenges")
 mcp.add_tool(race_prediction.get_race_prediction, name="garmin_race_prediction")
 mcp.add_tool(records.get_personal_records, name="garmin_personal_records")
