@@ -8,11 +8,13 @@ from garmin_mcp_lite.tools import (
     challenges,
     coach,
     device,
+    dive,
     events,
     gear,
     health,
     healthkit,
     hr_trend,
+    hrv,
     race_prediction,
     records,
     status,
@@ -62,6 +64,8 @@ mcp.add_tool(body.get_body_composition, name="garmin_body_composition")
 mcp.add_tool(body.add_body_composition, name="garmin_add_body_composition")
 mcp.add_tool(weight_sync.sync_weight, name="garmin_sync_weight")
 mcp.add_tool(healthkit.sync_healthkit, name="garmin_sync_healthkit")
+mcp.add_tool(hrv.get_hrv_status, name="garmin_hrv_status")
+mcp.add_tool(dive.get_dive_logs, name="garmin_dive_logs")
 
 
 def main():

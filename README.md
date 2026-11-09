@@ -20,11 +20,11 @@
 
 A lightweight Garmin Model Context Protocol (MCP) server, designed specifically for endurance athletes.
 
-It exposes **23 precisely-curated endpoints** for deep analysis of running, cycling, swimming, and health data — replacing bulky 80+ endpoint alternatives with a clean, focused toolset.
+It exposes **25 precisely-curated endpoints** for deep analysis of running, cycling, swimming, diving, and health data — replacing bulky 80+ endpoint alternatives with a clean, focused toolset.
 
-17 of them read. Six write: `garmin_add_body_composition` for a single manual weigh-in, `garmin_sync_weight` to pull them from a Xiaomi body-fat scale, `garmin_sync_healthkit` for scales whose apps write to Apple Health, `garmin_schedule_running_workout` to schedule structured running workouts to your Garmin calendar, and `garmin_add_event` / `garmin_delete_event` to manage race calendar events.
+19 of them read. Six write: `garmin_add_body_composition` for a single manual weigh-in, `garmin_sync_weight` to pull them from a Xiaomi body-fat scale, `garmin_sync_healthkit` for scales whose apps write to Apple Health, `garmin_schedule_running_workout` to schedule structured running workouts to your Garmin calendar, and `garmin_add_event` / `garmin_delete_event` to manage race calendar events.
 
-## Core Tools (23)
+## Core Tools (25)
 
 ### 🔧 Setup & Diagnosis
 
@@ -45,6 +45,7 @@ It exposes **23 precisely-curated endpoints** for deep analysis of running, cycl
 | `garmin_race_prediction` | Predicted 5K/10K/half/marathon finish times with pace, plus the change over a 90-day or 1-year window. |
 | `garmin_personal_records` | Personal bests (1K → marathon, longest run/ride, swim times, step records) with the activity that set each one. |
 | `garmin_schedule_running_workout` | **Write** a structured running workout (steady, warmup, intervals, cooldown with pace zones) and schedule it to your Garmin calendar. |
+| `garmin_dive_logs` | Get freediving and scuba diving logs: max/avg depth, dive count, bottom time, water temperature, surface interval, and dive reflex minimum heart rate. |
 
 ### 💚 Health & Wellness
 
@@ -52,6 +53,7 @@ It exposes **23 precisely-curated endpoints** for deep analysis of running, cycl
 |:---|:---|
 | `garmin_health` | Get comprehensive health metrics: sleep quality, HRV status, stress, body battery, **SpO2**, **respiration rate**, **intensity minutes**, **daily steps**, **floors climbed**, and resting heart rate. Supports `metric` parameter for targeted queries. |
 | `garmin_hr_trend` | Get resting heart rate trends for the last 7/30/90 days. |
+| `garmin_hrv_status` | Get overnight HRV status, baseline range, and recovery training guidance. |
 | `garmin_zones` | Heart rate zone boundaries (bpm ranges) per sport, plus lactate threshold and FTP. Use it to interpret the `hrZones` durations returned by `garmin_activity_detail`. |
 
 ### ⚖️ Body Composition

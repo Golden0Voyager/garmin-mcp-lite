@@ -12,17 +12,21 @@ _TOOL_MODULES = [
     "garmin_mcp_lite.onboarding",
     "garmin_mcp_lite.tools.activities",
     "garmin_mcp_lite.tools.body",
-    "garmin_mcp_lite.tools.health",
     "garmin_mcp_lite.tools.challenges",
     "garmin_mcp_lite.tools.coach",
     "garmin_mcp_lite.tools.device",
+    "garmin_mcp_lite.tools.dive",
     "garmin_mcp_lite.tools.events",
     "garmin_mcp_lite.tools.gear",
+    "garmin_mcp_lite.tools.health",
+    "garmin_mcp_lite.tools.healthkit",
     "garmin_mcp_lite.tools.hr_trend",
+    "garmin_mcp_lite.tools.hrv",
     "garmin_mcp_lite.tools.race_prediction",
     "garmin_mcp_lite.tools.records",
     "garmin_mcp_lite.tools.training",
     "garmin_mcp_lite.tools.weekly_stats",
+    "garmin_mcp_lite.tools.weight_sync",
     "garmin_mcp_lite.tools.workouts",
     "garmin_mcp_lite.tools.zones",
 ]
@@ -76,7 +80,18 @@ def _build_fake() -> MagicMock:
     fake.get_sleep_data.return_value = {
         "dailySleepDTO": {"sleepTimeInMinutes": 420, "deepSleepMinutes": 90, "remSleepMinutes": 105, "awakeCount": 3, "sleepScore": 78},
     }
-    fake.get_hrv_data.return_value = {"hrvSummary": {"weeklyAvg": 52.3, "lastNightAvg": 48.0, "status": "BALANCED"}}
+    fake.get_hrv_data.return_value = {
+        "hrvSummary": {
+            "calendarDate": "2026-11-08",
+            "weeklyAvg": 52.3,
+            "lastNightAvg": 48.0,
+            "lastNight5MinHigh": 64,
+            "baseline": {"lowUpper": 47, "balancedLow": 50, "balancedUpper": 66},
+            "status": "BALANCED",
+            "feedbackPhrase": "HRV_BALANCED",
+        },
+        "hrvReadings": [{"hrvValue": 48, "readingTimeGmt": "2026-11-08T00:00:00.0"}],
+    }
     fake.get_stress_data.return_value = {"avgStressLevel": 35, "maxStressLevel": 72, "restStressLevel": 18}
     fake.get_spo2_data.return_value = {"averageSpO2": 97.0, "lowestSpO2": 94.0, "latestSpO2": 98.0, "lastSevenDaysAvgSpO2": 96.5}
     fake.get_respiration_data.return_value = {"avgWakingRespirationValue": 14.2, "lowestRespirationValue": 11.0, "highestRespirationValue": 18.5}
@@ -154,6 +169,26 @@ def _build_fake() -> MagicMock:
                 {"trainingMethod": "HR_RESERVE", "restingHeartRateUsed": 43, "lactateThresholdHeartRateUsed": 166, "zone1Floor": 130, "zone2Floor": 141, "zone3Floor": 155, "zone4Floor": 172, "zone5Floor": 183, "maxHeartRateUsed": 198, "sport": "RUNNING"},
                 {"trainingMethod": "HR_MAX", "restingHeartRateUsed": 43, "lactateThresholdHeartRateUsed": 160, "zone1Floor": 94, "zone2Floor": 113, "zone3Floor": 132, "zone4Floor": 150, "zone5Floor": 169, "maxHeartRateUsed": 188, "sport": "CYCLING"},
             ]
+        if path == "/activity-service/activity/99001":
+            return {
+                "activityId": 99001,
+                "activityName": "Karangasem Freediving",
+                "startTimeLocal": "2026-08-18 14:47:19",
+                "activityType": {"typeKey": "apnea_diving"},
+                "summaryDTO": {
+                    "maxDepth": 25.4,
+                    "averageDepth": 12.3,
+                    "diveCount": 18,
+                    "bottomTime": 1420.0,
+                    "maxBottomTime": 115.0,
+                    "surfaceInterval": 3200.0,
+                    "averageTemperature": 28.5,
+                    "minHR": 48.0,
+                    "averageHR": 78.0,
+                    "maxHR": 95.0,
+                    "activityTrainingLoad": 12.5,
+                },
+            }
         return []
 
     fake.connectapi.side_effect = _fake_connectapi
