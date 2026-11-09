@@ -20,11 +20,11 @@
 
 A lightweight Garmin Model Context Protocol (MCP) server, designed specifically for endurance athletes.
 
-It exposes **20 precisely-curated endpoints** for deep analysis of running, cycling, swimming, and health data — replacing bulky 80+ endpoint alternatives with a clean, focused toolset.
+It exposes **23 precisely-curated endpoints** for deep analysis of running, cycling, swimming, and health data — replacing bulky 80+ endpoint alternatives with a clean, focused toolset.
 
-17 of them read. Three write: `garmin_add_body_composition` for a single manual weigh-in, `garmin_sync_weight` to pull them from a Xiaomi body-fat scale, and `garmin_sync_healthkit` for scales whose apps write to Apple Health — Garmin has no way to accept weight data from a third-party scale.
+17 of them read. Six write: `garmin_add_body_composition` for a single manual weigh-in, `garmin_sync_weight` to pull them from a Xiaomi body-fat scale, `garmin_sync_healthkit` for scales whose apps write to Apple Health, `garmin_schedule_running_workout` to schedule structured running workouts to your Garmin calendar, and `garmin_add_event` / `garmin_delete_event` to manage race calendar events.
 
-## Core Tools (20)
+## Core Tools (23)
 
 ### 🔧 Setup & Diagnosis
 
@@ -44,6 +44,7 @@ It exposes **20 precisely-curated endpoints** for deep analysis of running, cycl
 | `garmin_coach` | Overview of current Garmin Coach training plans. |
 | `garmin_race_prediction` | Predicted 5K/10K/half/marathon finish times with pace, plus the change over a 90-day or 1-year window. |
 | `garmin_personal_records` | Personal bests (1K → marathon, longest run/ride, swim times, step records) with the activity that set each one. |
+| `garmin_schedule_running_workout` | **Write** a structured running workout (steady, warmup, intervals, cooldown with pace zones) and schedule it to your Garmin calendar. |
 
 ### 💚 Health & Wellness
 
@@ -69,6 +70,8 @@ It exposes **20 precisely-curated endpoints** for deep analysis of running, cycl
 | Tool | Functionality |
 |:---|:---|
 | `garmin_events` | Get your upcoming race calendar: race dates (soonest first, past events excluded), target distances, and **goal finish times**. |
+| `garmin_add_event` | **Write** a race or event to your Garmin calendar (distance, goal time, primary status, location). |
+| `garmin_delete_event` | **Delete** a calendar event by its event ID. |
 | `garmin_challenges` | Get in-progress challenges: virtual climbs, monthly badge challenges, and their completion percentages. |
 
 ### ⌚ Device & Gear
