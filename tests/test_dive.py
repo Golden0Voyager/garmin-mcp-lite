@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from garmin_mcp_lite.tools.dive import get_dive_logs
+from garmin_mcp_lite.tools.dive import _format_dive_entry, get_dive_logs
 
 
 class TestGetDiveLogs:
@@ -101,3 +101,19 @@ class TestGetDiveLogs:
         res = get_dive_logs()
         assert "error" in res
         assert "activities failed" in res["error"]
+
+    def test_list_dives_detail_exception_and_empty_id(self, mock_get_client: MagicMock) -> None:
+        mock_get_client.get_activities.return_value = [
+            {"activityName": "No ID Dive", "activityType": {"typeKey": "apnea_diving"}},  # no activityId
+            {"activityId": 10003, "activityName": "Fallback Dive", "activityType": {"typeKey": "apnea_diving"}},
+        ]
+        mock_get_client.connectapi.side_effect = RuntimeError("500 Internal Error")
+        res = get_dive_logs(limit=5)
+        assert res["count"] == 1
+        assert res["dives"][0]["id"] == 10003
+
+    def test_type_key_fallback_to_summary(self) -> None:
+        summary = {"activityId": 1234, "activityType": {"typeKey": "gauge_diving"}}
+        res = _format_dive_entry(summary, {})
+        assert res["type"] == "gauge_diving"
+        assert res["type_name"] == "仪表潜水"
