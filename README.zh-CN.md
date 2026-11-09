@@ -19,11 +19,11 @@
 
 精简版 Garmin MCP 服务器，专为耐力运动爱好者设计。
 
-提取了进行深度运动数据分析最核心的 25 个接口（涵盖跑步、骑行、游泳、潜水、健康及体成分数据），完美替代臃肿的 80+ 接口方案。
+提取了进行深度运动数据分析最核心的 28 个接口（涵盖跑步、骑行、游泳、潜水、力量、健康及体成分数据），完美替代臃肿的 80+ 接口方案。
 
-其中 19 个是只读，六个会写入：`garmin_add_body_composition` 记一条手动体重，`garmin_sync_weight` 从小米体脂秤拉取，`garmin_sync_healthkit` 接收苹果健康桥接的数据，`garmin_schedule_running_workout` 向日历写入并排期跑步课表，`garmin_add_event` / `garmin_delete_event` 添加和删除赛事日历。
+其中 21 个是只读，七个会写入：`garmin_add_body_composition` 记一条手动体重，`garmin_sync_weight` 从小米体脂秤拉取，`garmin_sync_healthkit` 接收苹果健康桥接的数据，`garmin_schedule_running_workout` / `garmin_schedule_cycling_workout` 向日历写入并排期跑步与骑行课表，`garmin_add_event` / `garmin_delete_event` 添加和删除赛事日历。
 
-## 核心工具（25 个替代 80+）
+## 核心工具（28 个替代 80+）
 
 ### 🔧 状态自检
 
@@ -44,6 +44,9 @@
 | `garmin_race_prediction` | 5K/10K/半马/全马成绩预测（含配速），可看 90 天或 1 年内的变化 |
 | `garmin_personal_records` | 个人纪录：1K 到全马、最长跑/骑行、游泳、步数纪录，附创造纪录的活动 |
 | `garmin_schedule_running_workout` | **写入**结构化跑步课表（支持匀速跑、热身、间歇节奏段、冷身及配速区间）并排入 Garmin 日历 |
+| `garmin_schedule_cycling_workout` | **写入**结构化骑行功率课表（支持基于 FTP 比例区间或目标瓦特）并排入 Garmin 日历 |
+| `garmin_cycling_power` | 骑行功率与负荷表现：当前 FTP、功重比（W/kg）、NP 归一化功率、IF 强度系数、TSS 压力评分及踏频分析 |
+| `garmin_strength_analysis` | 力量训练容量与疲劳：动作组数、次数、容量负荷（重量×次数）、肌群分布热图与跑步疲劳冲突评估 |
 | `garmin_dive_logs` | 自由潜水与水肺潜水日志：最大/平均深度、下潜把数、水下时间、水面休息、水温、心动过缓反射最低心率 |
 
 ### 💚 健康
