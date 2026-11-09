@@ -379,10 +379,21 @@ python test_e2e.py
 | Zones | No | HR zone boundaries + lactate threshold + FTP |
 | Health Depth | Basic | SpO2, respiration, intensity minutes, steps |
 | Race/Challenge | No | Events calendar + challenge progress |
-| Write Ops | Heavy (weight/nutrition/gear) | Read-only |
-| Schema cost | High | ~2.5k tokens for all 20 tools |
+| Write Ops | Heavy (weight/nutrition/gear) | Weight, workouts, race events |
+| Schema cost | High | ~3k tokens for all 28 tools |
 
 ## Changelog
+
+### 0.1.10
+- New: `garmin_schedule_running_workout` — write and schedule structured running workouts (steady, warmup, intervals, cooldown with pace zones) to your Garmin calendar.
+- New: `garmin_schedule_cycling_workout` — write and schedule structured cycling workouts with target watts or % of FTP to your Garmin calendar.
+- New: `garmin_add_event` & `garmin_delete_event` — add and remove race calendar events with target distance, goal finish time, and primary status.
+- New: `garmin_hrv_status` — overnight HRV status, 7-day dynamic baseline range, and recovery guidance.
+- New: `garmin_dive_logs` — freediving (Apnea) and scuba diving logs: depth, dive count, bottom time, water temperature, surface interval, and dive reflex heart rate.
+- New: `garmin_cycling_power` — current FTP, W/kg, NP, IF, TSS, and cadence analytics.
+- New: `garmin_strength_analysis` — active sets, reps, volume load, exercise categorization, and runner fatigue conflict alerts.
+- Fix: `garmin_events` normalized race distances when Garmin reports in meters instead of kilometers.
+- Test: test suite expanded from 367 to 423 tests; reached 100.00% test coverage across all 28 tools.
 
 ### 0.1.9
 - Fix: a weighing written from a machine in another timezone landed at the wrong
