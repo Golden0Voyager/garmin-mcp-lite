@@ -33,6 +33,31 @@ class TestGetHrvStatus:
         assert res["status"] == "BALANCED"
         assert "良好" in res["training_guidance"]
 
+    def test_hrv_status_unbalanced_guidance(self, mock_get_client: MagicMock) -> None:
+        mock_get_client.get_hrv_data.return_value = {
+            "hrvSummary": {
+                "calendarDate": "2026-11-08",
+                "weeklyAvg": 48,
+                "lastNightAvg": 44,
+                "baseline": {"balancedLow": 50, "balancedUpper": 66},
+                "status": "UNBALANCED",
+            }
+        }
+        res = get_hrv_status("2026-11-08")
+        assert res["status"] == "UNBALANCED"
+        assert "累积疲劳" in res["training_guidance"]
+
+    def test_hrv_status_building_guidance(self, mock_get_client: MagicMock) -> None:
+        mock_get_client.get_hrv_data.return_value = {
+            "hrvSummary": {
+                "calendarDate": "2026-11-04",
+                "weeklyAvg": None,
+                "lastNightAvg": 40,
+                "status": "NONE",
+            }
+        }
+        res = get_hrv_status("2026-11-04")
+        assert "基线建立中" in res["training_guidance"]
     def test_hrv_status_low_guidance(self, mock_get_client: MagicMock) -> None:
         mock_get_client.get_hrv_data.return_value = {
             "hrvSummary": {

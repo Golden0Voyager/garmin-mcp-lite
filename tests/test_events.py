@@ -3,7 +3,13 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
-from garmin_mcp_lite.tools.events import add_event, delete_event, get_events
+from garmin_mcp_lite.tools.events import (
+    _normalize_distance_km,
+    _parse_goal_seconds,
+    add_event,
+    delete_event,
+    get_events,
+)
 
 
 def _event(name: str, day_offset: int | None) -> dict:
@@ -92,6 +98,31 @@ class TestGetEvents:
         result = get_events()
         assert result["events"][0]["distance_km"] == 16.09
 
+    def test_yard_distance_normalized_to_km(self, mock_get_client: MagicMock) -> None:
+        mock_get_client.connectapi.side_effect = None
+        mock_get_client.connectapi.return_value = [
+            {
+                "eventName": "Yard Event",
+                "date": (datetime.now() + timedelta(days=5)).strftime("%Y-%m-%d"),
+                "eventType": "running",
+                "completionTarget": {"value": 1000.0, "unit": "yard"},
+                "eventCustomization": None,
+            }
+        ]
+        result = get_events()
+        assert result["events"][0]["distance_km"] == 0.91
+
+    def test_parse_goal_seconds_variations(self) -> None:
+        assert _parse_goal_seconds("1:30:00") == 5400
+        assert _parse_goal_seconds("45:00") == 2700
+        assert _parse_goal_seconds("1200") == 1200
+        assert _parse_goal_seconds("invalid:time") is None
+        assert _parse_goal_seconds("1:2:3:4") is None
+        assert _parse_goal_seconds(None) is None
+        assert _normalize_distance_km({}) is None
+        assert _normalize_distance_km({"value": "not-a-number"}) is None
+        assert _normalize_distance_km({"value": True}) is None
+
 
 class TestAddEvent:
     def test_add_event_success(self, mock_get_client: MagicMock) -> None:
@@ -136,6 +167,18 @@ class TestAddEvent:
         res = add_event(name="Race", date="2026-11-22")
         assert "error" in res
         assert "network failed" in res["error"]
+
+    def test_add_event_with_note_and_two_part_goal(self, mock_get_client: MagicMock) -> None:
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {"id": 88889}
+        mock_get_client.client._run_request.return_value = mock_resp
+
+        res = add_event(name="10K Race", date="2026-11-22", note="Target sub 45", goal_time="45:00")
+        assert res["ok"] is True
+        call_args = mock_get_client.client._run_request.call_args
+        body = call_args[1]["json"]
+        assert body["note"] == "Target sub 45"
+        assert body["eventCustomization"]["customGoal"]["value"] == 2700.0
 
 
 class TestDeleteEvent:

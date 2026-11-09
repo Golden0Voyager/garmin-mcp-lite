@@ -17,6 +17,7 @@ class TestPaceToSpeed:
     def test_invalid_paces(self) -> None:
         assert _pace_to_speed("") is None
         assert _pace_to_speed("abc") is None
+        assert _pace_to_speed("a:b") is None
         assert _pace_to_speed("0:00") is None
         assert _pace_to_speed("1:2:3") is None
         assert _pace_to_speed(None) is None
@@ -100,6 +101,29 @@ class TestScheduleRunningWorkout:
 
         assert steps[2]["stepType"]["stepTypeKey"] == "cooldown"
         assert steps[2]["endConditionValue"] == 2000.0
+
+    def test_duration_and_lap_button_intervals(self, mock_get_client: MagicMock) -> None:
+        mock_get_client.upload_workout.return_value = {"workoutId": 1004}
+        mock_get_client.schedule_workout.return_value = {"workoutScheduleId": 2004}
+
+        res = schedule_running_workout(
+            name="Mixed Intervals",
+            date="2026-11-10",
+            intervals=[
+                "not-a-dict",  # triggers continue on non-dict
+                {"duration_min": 15.0, "pace_min": "5:00", "pace_max": "5:30"},
+                {"description": "Open lap run"},  # triggers lap button fallback
+            ],
+        )
+
+        assert res["ok"] is True
+        assert res["steps_count"] == 2
+        payload = mock_get_client.upload_workout.call_args[0][0]
+        steps = payload["workoutSegments"][0]["workoutSteps"]
+        assert steps[0]["endCondition"]["conditionTypeKey"] == "time"
+        assert steps[0]["endConditionValue"] == 900.0
+        assert steps[1]["endCondition"]["conditionTypeKey"] == "lap.button"
+        assert steps[1]["endConditionValue"] == 1.0
 
     def test_validation_errors(self) -> None:
         assert "error" in schedule_running_workout(name="", date="2026-11-10", steady_km=5.0)
