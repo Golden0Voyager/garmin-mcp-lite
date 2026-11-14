@@ -151,7 +151,31 @@ asyncio.run(main())
 PY
 REMOTE
 
+# ---- 4. 同步账号隔离守卫（放在独立目录，重装 venv 不会删掉它）----
+# 不能放 /opt/garmin_mcp_lite/：上面 rm -rf $VENV 重建时会把守卫一起删掉。
+GUARD_DIR=/opt/garmin_ops
+GUARD_SRC="$HERE/scripts/check_dad_token.sh"
+if [ -f "$GUARD_SRC" ]; then
+  echo "同步账号隔离守卫到 $GUARD_DIR ..."
+  ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "install -d -m 755 $GUARD_DIR"
+  scp -q "${SSH_OPTS[@]}" "$GUARD_SRC" "$SSH_TARGET:$GUARD_DIR/check_dad_token.sh"
+  ssh "${SSH_OPTS[@]}" "$SSH_TARGET" 'bash -s' <<'REMOTE'
+set -e
+chmod 755 /opt/garmin_ops/check_dad_token.sh
+bash -n /opt/garmin_ops/check_dad_token.sh   # 坏脚本不许进 cron
+/opt/garmin_ops/check_dad_token.sh
+WANT='*/10 * * * * /opt/garmin_ops/check_dad_token.sh >/dev/null 2>&1'
+crontab -l >/tmp/ct.guard 2>/dev/null || true
+# 清掉旧位置的条目，避免两个路径重复跑
+grep -vF '/opt/garmin_mcp_lite/check_dad_token.sh' /tmp/ct.guard > /tmp/ct.guard.new || true
+if ! grep -qF "$WANT" /tmp/ct.guard.new; then echo "$WANT" >> /tmp/ct.guard.new; fi
+crontab /tmp/ct.guard.new
+rm -f /tmp/ct.guard /tmp/ct.guard.new
+echo "  守卫已就位（每 10 分钟，只告警不重启）"
+REMOTE
+fi
+
 echo
-echo "完成。未改 connector、未重启 Octop、未发送任何消息。"
+echo "完成。未改 connector、未重启 Octop、未发送任何消息、未动任何 token。"
 echo "下一次对话会自动重新加载（aload_mcp_tools 失败时不写缓存）。"
 echo "观察日志确认无新报错: grep 'missing=.*garmin' /root/.octop/logs/octop.log | tail -3"
