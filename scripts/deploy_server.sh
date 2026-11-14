@@ -65,7 +65,8 @@ echo "远端 venv: $VENV"
 echo "token: 脚本永不同步（只能由服务器用爸爸账号独立登录产生）"
 if [ "$DRY" = 1 ]; then
   echo "[dry-run] 将：检查远端版本 → 必要时重建 venv 并装 wheel → 用 Octop 加载路径验证"
-  echo "[dry-run] 不会改 connector、不会重启 Octop、不会发任何消息、不会动 token"
+  echo "[dry-run]     → 若装了新版，强制失效 MCP 工具缓存让新代码立刻生效"
+  echo "[dry-run] 不会改 connector 定义、不会重启 Octop、不会发任何消息、不会动 token"
   exit 0
 fi
 
@@ -151,6 +152,27 @@ asyncio.run(main())
 PY
 REMOTE
 
+# ---- 3.5 让 Octop 主进程真的用上新代码 ----
+# 只把 wheel 装好不够。Octop 缓存的是「加载当时建好的工具对象」（内含与子进程
+# 的会话），缓存 key 的指纹只含 transport/url/headers/command/args/env，**不含
+# 包版本**。所以 spec 没变 → 指纹没变 → 缓存命中 → 继续跑旧代码，而且不报错。
+# 2026-11-14 就是被这个咬到：venv 重建完、agent 也重启了，garmin 依然坏着，
+# 直到显式 invalidate_mcp_tool_cache 才恢复。
+# 复用 sugar_bee 仓库装的 octop_mcp_guard.py 的 --force（同一套 sign_token + PATCH）。
+if [ "$READY" = 0 ]; then
+  echo "让 Octop 重新加载 garmin MCP（invalidate 工具缓存 + 重建 agent）..."
+  ssh "${SSH_OPTS[@]}" "$SSH_TARGET" \
+    'F=/opt/sugar_bee/octop_mcp_guard.py
+     if [ -f "$F" ]; then
+       /root/.octop/venv/bin/python "$F" --force garmin --user 3
+     else
+       echo "  WARN 未找到 $F，跳过强制重载" >&2
+       echo "  WARN 请先在 sugar_bee 仓库跑 ./scripts/ops/install_ops.sh" >&2
+       echo "  WARN 否则 Octop 可能仍在跑旧版 MCP 代码（不报错，只是行为没变）" >&2
+       exit 3
+     fi' || echo "  WARN 强制重载失败（HTTP/令牌问题），需手工确认 garmin 是否已生效"
+fi
+
 # ---- 4. 同步账号隔离守卫（放在独立目录，重装 venv 不会删掉它）----
 # 不能放 /opt/garmin_mcp_lite/：上面 rm -rf $VENV 重建时会把守卫一起删掉。
 GUARD_DIR=/opt/garmin_ops
@@ -176,6 +198,7 @@ REMOTE
 fi
 
 echo
-echo "完成。未改 connector、未重启 Octop、未发送任何消息、未动任何 token。"
-echo "下一次对话会自动重新加载（aload_mcp_tools 失败时不写缓存）。"
-echo "观察日志确认无新报错: grep 'missing=.*garmin' /root/.octop/logs/octop.log | tail -3"
+echo "完成。未改 connector 定义、未重启 Octop、未发送任何消息、未动任何 token。"
+echo "（若本次装了新 wheel，3.5 步已用 --force 强制失效缓存并重建 agent。）"
+echo "验证新代码真的在跑: grep 'mcp tool cache store user=3 server=garmin' /root/.octop/logs/octop.log | tail -2"
+echo "观察是否有缺失: grep 'missing=.*garmin' /root/.octop/logs/octop.log | tail -3"
