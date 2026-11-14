@@ -33,11 +33,19 @@ TOKEN_DIR=/root/.garmin-mcp-lite
 PYPI="${PYPI:-https://pypi.tuna.tsinghua.edu.cn/simple}"
 
 DRY=0
-WITH_TOKEN=0
 for a in "$@"; do
   case "$a" in
     --dry-run) DRY=1 ;;
-    --with-token) WITH_TOKEN=1 ;;
+    --with-token)
+      echo "ERROR: --with-token 已永久禁用。" >&2
+      echo "原因：本机 ~/.garmin-mcp-lite/ 存的是「用户本人」的 Garmin 会话，" >&2
+      echo "同步它会让老愚(爸爸的)健康管家读到本人数据 —— 2026-11-14 的实际事故。" >&2
+      echo "token 只能由服务器用爸爸账号独立登录产生：" >&2
+      echo "  ssh -t <server> 'GARMIN_EMAIL=<dad> GARMIN_PASSWORD=<pw> \\" >&2
+      echo "    GARMIN_IS_CN=0 GARMIN_TOKEN_DIR=/root/.garmin-mcp-lite \\" >&2
+      echo "    /opt/garmin_mcp_lite/bin/garmin-mcp-lite-login'" >&2
+      echo "绝不从 SugarBee 的 .garmin_tokens/ 复制文件（同一 refresh 链会互踢）。" >&2
+      exit 2 ;;
     -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
     *) echo "未知参数: $a" >&2; exit 2 ;;
   esac
@@ -54,10 +62,10 @@ SSH_TARGET="${REMOTE_USER}@${HOST}"
 echo "目标: $SSH_TARGET"
 echo "版本: $VERSION  wheel: $(basename "$WHEEL")"
 echo "远端 venv: $VENV"
-echo "token 同步: $([ "$WITH_TOKEN" = 1 ] && echo 是 || echo 否)"
+echo "token: 脚本永不同步（只能由服务器用爸爸账号独立登录产生）"
 if [ "$DRY" = 1 ]; then
   echo "[dry-run] 将：检查远端版本 → 必要时重建 venv 并装 wheel → 用 Octop 加载路径验证"
-  echo "[dry-run] 不会改 connector、不会重启 Octop、不会发任何消息"
+  echo "[dry-run] 不会改 connector、不会重启 Octop、不会发任何消息、不会动 token"
   exit 0
 fi
 
@@ -87,15 +95,28 @@ echo "  已安装: \$($VENV/bin/python -c 'import importlib.metadata as m; print
 REMOTE
 fi
 
-# ---- 2. 可选：同步 Garmin token（账号会话凭证，默认不动）----
-if [ "$WITH_TOKEN" = 1 ]; then
-  SRC="$HOME/.garmin-mcp-lite/garmin_tokens.json"
-  [ -f "$SRC" ] || { echo "ERROR: 本机没有 $SRC，先跑 garmin-mcp-lite-login" >&2; exit 1; }
-  ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "mkdir -p $TOKEN_DIR && chmod 700 $TOKEN_DIR"
-  scp -q "${SSH_OPTS[@]}" "$SRC" "$SSH_TARGET:$TOKEN_DIR/garmin_tokens.json"
-  ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "chmod 600 $TOKEN_DIR/garmin_tokens.json"
-  echo "  token 已同步（600）"
-fi
+# ---- 2. token 闸门：绝不从本机同步（见 --with-token 的错误说明）----
+# 账号归属必须在每次 deploy 后复查：本机 ~/.garmin-mcp-lite/ 是本人账号，
+# 服务器 /root/.garmin-mcp-lite/ 必须是爸爸账号 guid 8f5945a3f896。
+echo "校验远端 token 账号归属（只读，不调用任何 garmin 工具）..."
+ssh "${SSH_OPTS[@]}" "$SSH_TARGET" 'bash -s' <<'REMOTE'
+D=/tmp/garmin_deploy_probe
+install -d -m 700 "$D"
+cp -a /root/.garmin-mcp-lite/garmin_tokens.json "$D/probe.json"
+python3 - "$D/probe.json" <<'PY'
+import json,base64,hashlib,sys
+f=lambda s:hashlib.sha256(str(s).encode()).hexdigest()[:12]
+d=json.load(open(sys.argv[1])); t=d['di_token']
+p=t.split('.')[1]; p+='='*(-len(p)%4)
+g=f(json.loads(base64.urlsafe_b64decode(p)).get('garmin_guid',''))
+print('  garmin_guid =',g)
+if g != '8f5945a3f896':
+    print('  !! 账号不是爸爸（可能是本人或旧会话），禁止继续部署', file=sys.stderr)
+    sys.exit(1)
+print('  OK: 爸爸账号')
+PY
+rm -rf "$D"
+REMOTE
 
 # ---- 3. 走 Octop 真实加载路径验证（不发消息、不改数据、不重启）----
 echo "用 Octop 的 custom_harness_configs → aload_mcp_tools 验证 ..."
