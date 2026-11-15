@@ -22,22 +22,30 @@ set -u
 
 TOKEN=${TOKEN:-/root/.garmin-mcp-lite/garmin_tokens.json}
 BARK_KEY_FILE=${BARK_KEY_FILE:-/opt/sugar_bee/.bark_key}
-STATE=/tmp/garmin_dad_guard.last
-LOCK_MIN=30
+# 告警状态改用边沿触发后，不再需要「上次推送时间」的全局时间戳：
+# 原来那个 /tmp/garmin_dad_guard.last 是所有事件共用一个，既限不住频率，
+# 也无法区分「这条故障是否已经报过」。现在按标题哈希各自记状态。
+LEGACY_STATE=/tmp/garmin_dad_guard.last
 
 DAD_GUID=8f5945a3f896
 SELF_GUID=1347decc8a4e
 
 log() { echo "[$(date '+%F %T %Z')] $*"; }
 
+SAW_FAULT=0
+
 notify() {
-  local title="$1" body="$2"
+  local title="$1" body="$2" key_id stamp
+  SAW_FAULT=1
   [ -s "$BARK_KEY_FILE" ] || { log "WARN 无 Bark key，跳过推送: $title"; return 0; }
-  # 30 分钟限流，避免把真故障刷成告警风暴
-  if [ -f "$STATE" ]; then
-    last=$(cat "$STATE" 2>/dev/null || echo 0)
-    [ $(( $(date +%s) - last )) -lt $((LOCK_MIN * 60)) ] && return 0
-  fi
+  # 边沿触发（2026-11-15 改）：同一事件只在「正常 → 故障」时推一次，故障持续
+  # 期间不再重复。原来是 30 分钟冷却，等于每 30 分钟一条，一个持续故障半天就能
+  # 堆十几条——这正是用户投诉的「持续骚扰」。
+  # 状态在恢复正常时由 reset_notify_state 清除，之后再出问题才会重新推送。
+  key_id=$(printf '%s' "$title" | md5sum | cut -c1-8)
+  stamp="/tmp/garmin_dad_guard_edge_$key_id"
+  [ -f "$stamp" ] && return 0
+  date +%s >"$stamp" 2>/dev/null || true
   python3 - "$BARK_KEY_FILE" "$title" "$body" <<'PY' 2>/dev/null || true
 import json, sys, urllib.request
 key, title, body = sys.argv[1:4]
@@ -48,8 +56,12 @@ req = urllib.request.Request("https://api.day.app/" + key, data=payload,
                              headers={"Content-Type": "application/json"})
 urllib.request.urlopen(req, timeout=10)
 PY
-  date +%s > "$STATE"
-  log "已推送告警: $title"
+  log "已推送告警（同一故障再次发生前不会重复）: $title"
+}
+
+# 一切正常时调用：清掉「已在告警」的边沿状态。不推「已恢复」——用户要的是少消息。
+reset_notify_state() {
+  rm -f /tmp/garmin_dad_guard_edge_* 2>/dev/null || true
 }
 
 if [ ! -s "$TOKEN" ]; then
@@ -111,5 +123,11 @@ if [ "$ERRS" -gt 0 ] || [ "$OCTO" -gt 0 ]; then
   notify "老愚 Garmin 认证异常" "近 30m SugarBee 错误=$ERRS，Octop 累计=$OCTO。这才是 refresh 链真断了的信号。只告警不重启；两条链分别处理，绝不互相复制 token。"
 fi
 
-log "OK guid=$GUID 剩余=${LEFT}h（无动作）"
+if [ "$SAW_FAULT" = 0 ]; then
+  reset_notify_state
+  log "OK guid=$GUID 剩余=${LEFT}h（无动作）"
+else
+  # 本轮仍有告警项：保留边沿状态，下一轮同一故障不再重复推送。
+  log "FAULT 本轮有告警项，保留告警状态（同一故障不重复推送）"
+fi
 exit 0
