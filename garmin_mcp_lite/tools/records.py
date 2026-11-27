@@ -148,7 +148,21 @@ def get_fastest_splits(
     per_distance = max(1, per_distance)
 
     try:
-        raw = client.get_fastest_splits(start, end, "running", per_distance)
+        fastest_splits = getattr(client, "get_fastest_splits", None)
+        if callable(fastest_splits):
+            raw = fastest_splits(start, end, "running", per_distance)
+        else:
+            # garminconnect versions before the helper was added can still call
+            # the same endpoint through their generic authenticated transport.
+            raw = client.connectapi(
+                "/activitylist-service/activities/fastest-splits",
+                params={
+                    "numberOfBests": per_distance,
+                    "startDate": start,
+                    "endDate": end,
+                    "activityType": "running",
+                },
+            )
     except Exception as e:
         return {"error": str(e)}
 
