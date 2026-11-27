@@ -61,6 +61,27 @@ class TestFastestSplits:
         mock_get_client.get_fastest_splits.side_effect = Exception("boom")
         assert get_fastest_splits()["error"] == "boom"
 
+    def test_falls_back_to_connectapi_for_older_clients(self, mock_get_client: MagicMock, monkeypatch) -> None:
+        rows = mock_get_client.get_fastest_splits.return_value
+        del mock_get_client.get_fastest_splits
+        mock_get_client.connectapi.side_effect = None
+        mock_get_client.connectapi.return_value = rows
+        monkeypatch.setattr("garmin_mcp_lite.tools.records.today_str", lambda: "2026-06-18")
+        monkeypatch.setattr("garmin_mcp_lite.tools.records.days_ago_str", lambda days: "2026-03-20")
+
+        result = get_fastest_splits(period="90d", per_distance=2)
+
+        assert result["count"] == 2
+        mock_get_client.connectapi.assert_called_once_with(
+            "/activitylist-service/activities/fastest-splits",
+            params={
+                "numberOfBests": 2,
+                "startDate": "2026-03-20",
+                "endDate": "2026-06-18",
+                "activityType": "running",
+            },
+        )
+
     def test_skips_bad_rows_and_labels_uncommon_distances(self, mock_get_client: MagicMock) -> None:
         mock_get_client.get_fastest_splits.return_value = [
             None,
