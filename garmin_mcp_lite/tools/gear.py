@@ -1,4 +1,5 @@
 from garmin_mcp_lite.client import get_client
+from garmin_mcp_lite.tools._common import as_list
 
 
 def get_gear_list() -> dict:
@@ -9,7 +10,9 @@ def get_gear_list() -> dict:
     profile = client.get_user_profile()
     user_profile_number = profile.get("id")
 
-    gear = client.get_gear(user_profile_number)
+    # get_gear is annotated as dict, but every supported library version
+    # returns a list of gear objects.
+    gear = as_list(client.get_gear(str(user_profile_number)))
     items = []
 
     for g in gear:
