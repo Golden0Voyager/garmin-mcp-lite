@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from garmin_mcp_lite.tools.records import get_personal_records
+from garmin_mcp_lite.tools.records import get_fastest_splits, get_personal_records
 
 
 class TestPersonalRecords:
@@ -38,3 +38,37 @@ class TestPersonalRecordsErrors:
     def test_returns_error_dict(self, mock_get_client: MagicMock) -> None:
         mock_get_client.get_personal_record.side_effect = Exception("boom")
         assert get_personal_records()["error"] == "boom"
+
+
+class TestFastestSplits:
+    def test_groups_bests_per_distance(self) -> None:
+        result = get_fastest_splits(period="365d")
+        assert result["count"] == 2
+        one_k = result["splits"][0]
+        assert one_k["distance"] == "1k"
+        assert one_k["best_time"] == "3:16"
+        assert one_k["pace"] == "03:16"
+        assert one_k["date"] == "2026-09-01"
+        assert one_k["activity_id"] == 24193607983
+
+    def test_sorts_efforts_and_limits_per_distance(self) -> None:
+        result = get_fastest_splits(per_distance=1)
+        one_k = result["splits"][0]
+        assert len(one_k["top"]) == 1
+        assert one_k["top"][0]["time"] == "3:16"
+
+    def test_returns_error_dict(self, mock_get_client: MagicMock) -> None:
+        mock_get_client.get_fastest_splits.side_effect = Exception("boom")
+        assert get_fastest_splits()["error"] == "boom"
+
+    def test_skips_bad_rows_and_labels_uncommon_distances(self, mock_get_client: MagicMock) -> None:
+        mock_get_client.get_fastest_splits.return_value = [
+            None,
+            {"distance": 2000, "activityId": 1, "activityDate": "2026-09-01", "time": 400.0},
+            {"distance": 400, "activityId": 2, "activityDate": "2026-09-01", "time": 100.0},
+            {"distance": 5000, "activityId": 3, "activityDate": "2026-09-01", "time": 0},
+        ]
+
+        result = get_fastest_splits()
+
+        assert [split["distance"] for split in result["splits"]] == ["400m", "2k"]
