@@ -32,6 +32,11 @@ def _line(day: str, weight: float = 72.2, time: str = "09:00:00", **extra) -> st
     return json.dumps({"timestamp": f"{day}T{time}", "weight_kg": weight, "source": "afu", **extra})
 
 
+def _day(offset_days: int) -> str:
+    """A date inside the default sync window, regardless of when CI runs."""
+    return (datetime.now() - timedelta(days=offset_days)).strftime("%Y-%m-%d")
+
+
 def _garmin_history(days_weights: dict[str, float]) -> dict:
     return {"records": [{"date": day, "weight_kg": w} for day, w in days_weights.items()]}
 
@@ -78,10 +83,10 @@ class TestParsing:
             "\n".join(
                 [
                     "not json at all",
-                    json.dumps({"date": "2026-10-25"}),  # no weight
-                    _line("2026-10-25", 72.2),
-                    _line("2026-10-25", 72.2),  # same measurement appended twice
-                    _line("2026-10-24", 71.9),
+                    json.dumps({"date": _day(3)}),  # no weight
+                    _line(_day(3), 72.2),
+                    _line(_day(3), 72.2),  # same measurement appended twice
+                    _line(_day(4), 71.9),
                 ]
             ),
             encoding="utf-8",
@@ -101,7 +106,7 @@ class TestParsing:
         # forgot the final line break produces one line with two objects.
         _read, write = mocks
         bridge_file.write_text(
-            _line("2026-10-24", 71.9) + _line("2026-10-25", 72.2),
+            _line(_day(4), 71.9) + _line(_day(3), 72.2),
             encoding="utf-8",
         )
 
@@ -114,7 +119,7 @@ class TestParsing:
     def test_glued_line_with_trailing_garbage_keeps_what_decoded(self, bridge_file: Path, mocks) -> None:
         _read, write = mocks
         bridge_file.write_text(
-            _line("2026-10-24", 71.9) + "garbage{",
+            _line(_day(4), 71.9) + "garbage{",
             encoding="utf-8",
         )
 
@@ -127,12 +132,12 @@ class TestParsing:
     def test_date_only_line_is_read_as_7am(self, bridge_file: Path, mocks) -> None:
         _read, write = mocks
         bridge_file.write_text(
-            json.dumps({"date": "2026-10-25", "weight_kg": 72.2}), encoding="utf-8"
+            json.dumps({"date": _day(3), "weight_kg": 72.2}), encoding="utf-8"
         )
 
         healthkit.sync_healthkit()
 
-        assert write.call_args.kwargs["timestamp"] == "2026-10-25T07:00:00"
+        assert write.call_args.kwargs["timestamp"] == f"{_day(3)}T07:00:00"
 
     def test_bad_timestamp_line_is_skipped(self, bridge_file: Path, mocks) -> None:
         _read, write = mocks
@@ -153,7 +158,7 @@ class TestParsing:
                     "[1, 2]",  # valid JSON, but not an object
                     "",  # blank line
                     json.dumps({"weight_kg": 70.0}),  # no timestamp and no date
-                    _line("2026-10-25", 72.2),
+                    _line(_day(3), 72.2),
                 ]
             ),
             encoding="utf-8",
@@ -168,7 +173,7 @@ class TestParsing:
 
     def test_unreadable_file_is_reported(self, bridge_file: Path, mocks) -> None:
         _read, write = mocks
-        bridge_file.write_text(_line("2026-10-25"), encoding="utf-8")
+        bridge_file.write_text(_line(_day(3)), encoding="utf-8")
 
         def boom(*args, **kwargs) -> str:
             raise OSError("icloud not mounted")
@@ -184,7 +189,7 @@ class TestParsing:
         bridge_file.write_text(
             json.dumps(
                 {
-                    "date": "2026-10-25",
+                    "date": _day(3),
                     "weight_kg": 72.2,
                     "body_fat_pct": 16.6,
                     "muscle_mass_kg": 30.1,
@@ -227,10 +232,10 @@ class TestWindow:
 class TestSyncSemantics:
     def test_skips_days_garmin_already_has(self, bridge_file: Path, mocks) -> None:
         read, write = mocks
-        bridge_file.write_text(_line("2026-10-25"), encoding="utf-8")
-        read.return_value = _garmin_history({"2026-10-25": 72.2})
+        bridge_file.write_text(_line(_day(3)), encoding="utf-8")
+        read.return_value = _garmin_history({_day(3): 72.2})
 
-        with patch.object(healthkit, "_window_clocks", return_value={"2026-10-25": [_wall("2026-10-25")]}):
+        with patch.object(healthkit, "_window_clocks", return_value={_day(3): [_wall(_day(3))]}):
             result = healthkit.sync_healthkit()
 
         assert result["skipped"][0]["reason"] == "already on Garmin"
@@ -238,8 +243,8 @@ class TestSyncSemantics:
 
     def test_refuses_implausible_weight_before_writing(self, bridge_file: Path, mocks) -> None:
         read, write = mocks
-        bridge_file.write_text(_line("2026-10-25", 145.0), encoding="utf-8")
-        read.return_value = _garmin_history({"2026-10-22": 71.8, "2026-10-23": 72.0, "2026-10-24": 71.9})
+        bridge_file.write_text(_line(_day(3), 145.0), encoding="utf-8")
+        read.return_value = _garmin_history({_day(6): 71.8, _day(5): 72.0, _day(4): 71.9})
 
         result = healthkit.sync_healthkit()
 
@@ -252,7 +257,7 @@ class TestSyncSemantics:
         # Morning and evening are two measurements, not one reported twice.
         _read, write = mocks
         bridge_file.write_text(
-            "\n".join([_line("2026-10-25", 72.4, time="21:30:00"), _line("2026-10-25", 72.2, time="07:10:00")]),
+            "\n".join([_line(_day(3), 72.4, time="21:30:00"), _line(_day(3), 72.2, time="07:10:00")]),
             encoding="utf-8",
         )
 
@@ -265,19 +270,19 @@ class TestSyncSemantics:
     def test_a_second_weighing_lands_beside_the_first(self, bridge_file: Path, mocks) -> None:
         _read, write = mocks
         bridge_file.write_text(
-            "\n".join([_line("2026-10-25", 72.2, time="07:10:00"), _line("2026-10-25", 72.4, time="21:30:00")]),
+            "\n".join([_line(_day(3), 72.2, time="07:10:00"), _line(_day(3), 72.4, time="21:30:00")]),
             encoding="utf-8",
         )
-        with patch.object(healthkit, "_window_clocks", return_value={"2026-10-25": [_wall("2026-10-25", "07:10:00")]}):
+        with patch.object(healthkit, "_window_clocks", return_value={_day(3): [_wall(_day(3), "07:10:00")]}):
             result = healthkit.sync_healthkit()
 
         assert write.call_count == 1
-        assert write.call_args.kwargs["timestamp"] == "2026-10-25T21:30:00"
+        assert write.call_args.kwargs["timestamp"] == f"{_day(3)}T21:30:00"
         assert result["skipped"][0]["reason"] == "already on Garmin"
 
     def test_dry_run_writes_nothing(self, bridge_file: Path, mocks) -> None:
         _read, write = mocks
-        bridge_file.write_text(_line("2026-10-25"), encoding="utf-8")
+        bridge_file.write_text(_line(_day(3)), encoding="utf-8")
 
         result = healthkit.sync_healthkit(dry_run=True)
 
@@ -287,7 +292,7 @@ class TestSyncSemantics:
 
     def test_garmin_read_failure_aborts_before_writing(self, bridge_file: Path, mocks) -> None:
         read, write = mocks
-        bridge_file.write_text(_line("2026-10-25"), encoding="utf-8")
+        bridge_file.write_text(_line(_day(3)), encoding="utf-8")
         read.return_value = {"error": "401"}
 
         result = healthkit.sync_healthkit()
@@ -297,17 +302,17 @@ class TestSyncSemantics:
 
     def test_records_a_failed_write(self, bridge_file: Path, mocks) -> None:
         _read, write = mocks
-        bridge_file.write_text(_line("2026-10-25"), encoding="utf-8")
+        bridge_file.write_text(_line(_day(3)), encoding="utf-8")
         write.return_value = {"error": "upload refused", "written": False}
 
         result = healthkit.sync_healthkit()
 
         assert result["written"] == []
-        assert result["failed"] == [{"date": "2026-10-25", "error": "upload refused"}]
+        assert result["failed"] == [{"date": _day(3), "error": "upload refused"}]
 
     def test_unverified_writes_raise_the_timezone_warning(self, bridge_file: Path, mocks) -> None:
         _read, write = mocks
-        bridge_file.write_text(_line("2026-10-25"), encoding="utf-8")
+        bridge_file.write_text(_line(_day(3)), encoding="utf-8")
         write.return_value = {"written": True, "verified": False}
 
         result = healthkit.sync_healthkit()
@@ -328,7 +333,7 @@ class TestGarminFailure:
 
     def test_a_missing_garmin_token_is_reported_not_raised(self, bridge_file: Path, mocks) -> None:
         _read, write = mocks
-        bridge_file.write_text(_line("2026-10-25"), encoding="utf-8")
+        bridge_file.write_text(_line(_day(3)), encoding="utf-8")
 
         with patch.object(healthkit, "get_client", side_effect=RuntimeError("Garmin token not found")):
             result = healthkit.sync_healthkit()
@@ -338,7 +343,7 @@ class TestGarminFailure:
 
     def test_an_unreadable_zone_does_not_stop_the_sync(self, bridge_file: Path, mocks) -> None:
         _read, write = mocks
-        bridge_file.write_text(_line("2026-10-25"), encoding="utf-8")
+        bridge_file.write_text(_line(_day(3)), encoding="utf-8")
 
         with patch.object(healthkit, "_account_offset", side_effect=RuntimeError("read down")):
             result = healthkit.sync_healthkit()
@@ -349,8 +354,8 @@ class TestGarminFailure:
 
     def test_an_old_garminconnect_falls_back_to_the_day_summary(self, bridge_file: Path, mocks) -> None:
         read, write = mocks
-        bridge_file.write_text(_line("2026-10-25"), encoding="utf-8")
-        read.return_value = _garmin_history({"2026-10-25": 72.2})
+        bridge_file.write_text(_line(_day(3)), encoding="utf-8")
+        read.return_value = _garmin_history({_day(3): 72.2})
 
         with patch.object(healthkit, "_window_clocks", side_effect=AttributeError("no get_weigh_ins")):
             result = healthkit.sync_healthkit()
@@ -361,7 +366,7 @@ class TestGarminFailure:
     def test_a_rate_limited_write_stops_the_run(self, bridge_file: Path, mocks) -> None:
         _read, write = mocks
         bridge_file.write_text(
-            "\n".join([_line("2026-10-24", 71.9), _line("2026-10-25", 72.2)]),
+            "\n".join([_line(_day(4), 71.9), _line(_day(3), 72.2)]),
             encoding="utf-8",
         )
         write.side_effect = [{"error": "Rate limit exceeded", "written": False, "rate_limited": True}]
