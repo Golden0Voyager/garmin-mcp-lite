@@ -90,6 +90,20 @@ class TestGetTrainingStatus:
         assert four_week["aerobic_low"] == {"load": 1252, "target_min": 433, "target_max": 952}
         assert four_week["anaerobic"]["target_min"] == 173
 
+    def test_four_week_load_falls_back_to_connectapi_for_older_clients(self, mock_get_client, monkeypatch) -> None:
+        payload = mock_get_client.get_training_four_week_load_balance.return_value
+        del mock_get_client.get_training_four_week_load_balance
+        mock_get_client.connectapi.side_effect = None
+        mock_get_client.connectapi.return_value = payload
+        monkeypatch.setattr("garmin_mcp_lite.tools.training.today_str", lambda: "2026-06-18")
+
+        four_week = get_training_status()["four_week_load"]
+
+        assert four_week["aerobic_low"] == {"load": 1252, "target_min": 433, "target_max": 952}
+        mock_get_client.connectapi.assert_called_once_with(
+            "/metrics-service/metrics/trainingloadbalance/latest/2026-06-18"
+        )
+
     def test_fitness_age_components(self) -> None:
         fitness = get_training_status()["fitness_age"]
         assert fitness["chronological_age"] == 38
