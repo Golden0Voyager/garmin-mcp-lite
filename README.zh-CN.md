@@ -36,13 +36,14 @@
 | 工具 | 功能 |
 |:---|:---|
 | `garmin_activities` | 查跑步/骑行/游泳/潜水记录，支持日期/类型筛选 |
-| `garmin_activity_detail` | 单次活动详情（配速、心率区间、分段、圈数） |
+| `garmin_activity_detail` | 单次活动详情（配速、心率区间、分段、圈数），默认附带训练负荷与有氧/无氧训练效果；可选 `fields`：`"splits"`、`"hrZones"`、`"laps"`、`"weather"`、`"gear"`、`"typedSplits"` |
 | `garmin_training_plan` | 今日/指定日期训练课表 |
-| `garmin_training_status` | 训练状态、VO2Max、**急性负荷**、**负荷分布**、恢复时间、训练准备度 |
+| `garmin_training_status` | 训练状态、VO2Max、**急性负荷与 ACWR 明细**、**四周负荷平衡及目标区间**、恢复时间、训练准备度（含因子拆解与 7 天历史）、体能年龄 |
 | `garmin_weekly_stats` | 周/月/年训练总量统计 |
 | `garmin_coach` | Garmin Coach 训练计划概览 |
 | `garmin_race_prediction` | 5K/10K/半马/全马成绩预测（含配速），可看 90 天或 1 年内的变化 |
 | `garmin_personal_records` | 个人纪录：1K 到全马、最长跑/骑行、游泳、步数纪录，附创造纪录的活动 |
+| `garmin_fastest_splits` | 最快分段：Garmin 在长距离跑中记录到的 1K/1 英里/5K/10K/半马/全马最快滚动分段，含配速、日期与活动 ID |
 | `garmin_schedule_running_workout` | **写入**结构化跑步课表（支持匀速跑、热身、间歇节奏段、冷身及配速区间）并排入 Garmin 日历 |
 | `garmin_schedule_cycling_workout` | **写入**结构化骑行功率课表（支持基于 FTP 比例区间或目标瓦特）并排入 Garmin 日历 |
 | `garmin_cycling_power` | 骑行功率与负荷表现：当前 FTP、功重比（W/kg）、NP 归一化功率、IF 强度系数、TSS 压力评分及踏频分析 |
@@ -53,8 +54,8 @@
 
 | 工具 | 功能 |
 |:---|:---|
-| `garmin_health` | 睡眠/HRV/压力/身体电量/血氧/呼吸/强度分钟/步数/爬楼层/静息心率，支持 `metric` 参数定向查询 |
-| `garmin_hr_trend` | 近 7/30/90 天静息心率趋势 |
+| `garmin_health` | 详细睡眠（分期、评分因子、入睡/起床时间、夜间 SpO2/呼吸/压力/HRV、翻身次数、身体电量变化）、生活日志完成情况、HRV、压力、身体电量、血氧、呼吸、强度分钟、步数、爬楼层、静息心率，支持 `metric` 参数定向查询 |
+| `garmin_hr_trend` | 近 7/30/90 天静息心率趋势，附完整时间序列（按日期升序，便于画图） |
 | `garmin_hrv_status` | 昨夜 HRV 状态、7 天动态基准线区间、自主神经恢复评估与训练建议 |
 | `garmin_zones` | 各运动的心率区间边界（bpm）、乳酸阈值、FTP；用于解读 `garmin_activity_detail` 的 `hrZones` |
 
@@ -375,9 +376,17 @@ python test_e2e.py
 | 心率区间 | 无 | 区间边界 + 乳酸阈值 + FTP |
 | 健康深度 | 基础 | 血氧、呼吸、强度分钟、步数 |
 | 写操作 | 大量（体重/营养/装备） | 体重、跑步/骑行课表、赛事日历 |
-| Schema 开销 | 高 | 28 个工具共约 3k tokens |
+| Schema 开销 | 高 | 29 个工具共约 3k tokens |
 
 ## 变更记录
+
+### 未发布
+- 新增：`garmin_fastest_splits` —— Garmin 记录到的 1K/1 英里/5K/10K/半马/全马最快滚动分段，含配速、日期与来源活动。
+- `garmin_health`：睡眠补充分期明细、评分因子、睡眠窗口、夜间 SpO2/呼吸/压力/HRV、翻身次数与身体电量变化；新增 `lifestyle` 指标，返回生活日志完成情况与追踪条目。
+- `garmin_training_status`：训练准备度补充等级、反馈、各因子百分比与 7 天历史；负荷平衡补充四周目标区间；急性负荷补充 ACWR 比值与上下限；新增体能年龄及其构成因子。
+- `garmin_hr_trend`：静息心率改为一次批量请求（保留 6 路逐日扫描作为回退），并返回完整按日期升序的 `series`。
+- `garmin_activity_detail`：默认返回训练负荷与有氧/无氧训练效果；`fields` 新增 `"weather"`、`"gear"`、`"typedSplits"`。
+- 修复：睡眠分期分钟数此前按数值大小猜测单位，21 分钟的清醒时长会被误报为 1260 分钟；现在秒字段一律除以 60。
 
 ### 0.1.10
 - 新增：`garmin_schedule_running_workout` —— 写入结构化跑步课表（支持匀速跑、热身、间歇节奏段、冷身及阶段配速区间）并排入 Garmin 日历。
