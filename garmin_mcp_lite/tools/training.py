@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import suppress
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -115,11 +116,12 @@ def get_training_status() -> dict:
     """Get current training status summary.
 
     Returns training status label, VO2Max, acute training load, load focus
-    distribution (aerobic_low / aerobic_high / anaerobic), recovery time,
-    training readiness score, and sleep score.
+    distribution (aerobic_low / aerobic_high / anaerobic) with 4-week targets,
+    recovery time, training readiness score with factor breakdown and a
+    7-day history, fitness age, and sleep score.
 
-    Cost: ~10 API requests — the readiness scan covers 7 days (in parallel)
-    because Garmin exposes it one day at a time.
+    Cost: ~5 API requests. Readiness is fetched in one range call; the
+    per-day scan is only a fallback for Garmin builds without that endpoint.
     """
     client = get_client()
     today = today_str()
@@ -206,14 +208,22 @@ def get_training_status() -> dict:
         load_value = load_raw.get("trainingLoad")
 
     # ── Parse training readiness (pick the most recent entry) ────────────────
-    # Scan the last 7 days, collect all entries, then select the one with the
-    # latest timestamp to avoid stale data overriding fresh data.
+    # One range call covers the week. Older garminconnect builds / mocks
+    # without get_training_readiness_range fall back to the per-day scan.
     readiness = {}
-    readiness_candidates = []
-    scan_days = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
-    with ThreadPoolExecutor(max_workers=len(scan_days)) as pool:
-        for entries in pool.map(lambda day: _readiness_for_day(client, day), scan_days):
-            readiness_candidates.extend(entries)
+    readiness_candidates: list[Any] = []
+    scan_start = (datetime.now() - timedelta(days=6)).strftime("%Y-%m-%d")
+    try:
+        range_entries = client.get_training_readiness_range(scan_start, today)
+    except Exception:
+        range_entries = None
+    if isinstance(range_entries, list):
+        readiness_candidates = [entry for entry in range_entries if isinstance(entry, dict)]
+    else:
+        scan_days = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(7)]
+        with ThreadPoolExecutor(max_workers=len(scan_days)) as pool:
+            for entries in pool.map(lambda day: _readiness_for_day(client, day), scan_days):
+                readiness_candidates.extend(entries)
     if readiness_candidates:
         # Sort by timestampLocal descending, pick the most recent entry
         def _ts(r):
@@ -242,6 +252,7 @@ def get_training_status() -> dict:
     # Acute Training Load
     acute_load = None
     acwr_status = None
+    acute_dto: dict[str, Any] = {}
     if isinstance(training_status_raw, dict):
         # Find acute load data for the primary training device
         device_map = training_status_raw.get("latestTrainingStatusData", {})
@@ -254,14 +265,152 @@ def get_training_status() -> dict:
             acute_load = acute_dto.get("dailyTrainingLoadAcute")
             acwr_status = acute_dto.get("acwrStatus")
 
+    acute_load_detail = (
+        {
+            "acute": acute_load,
+            "chronic": acute_dto.get("dailyTrainingLoadChronic"),
+            "ratio": acute_dto.get("dailyAcuteChronicWorkloadRatio"),
+            "percent": acute_dto.get("acwrPercent"),
+            "status": acwr_status,
+            "chronic_min": acute_dto.get("minTrainingLoadChronic"),
+            "chronic_max": acute_dto.get("maxTrainingLoadChronic"),
+        }
+        if acute_dto
+        else None
+    )
+
+    # Readiness factor breakdown and 7-day history (newest last)
+    readiness_detail = None
+    readiness_history: list[dict[str, Any]] = []
+    if isinstance(readiness, dict) and readiness:
+        readiness_detail = {
+            "date": readiness.get("calendarDate"),
+            "score": readiness.get("score"),
+            "level": readiness.get("level"),
+            "feedback_short": readiness.get("feedbackShort"),
+            "feedback_long": readiness.get("feedbackLong"),
+            "sleep_score": readiness.get("sleepScore"),
+            "hrv_weekly_average": readiness.get("hrvWeeklyAverage"),
+            "factors": {
+                "sleep": {
+                    "percent": readiness.get("sleepScoreFactorPercent"),
+                    "feedback": readiness.get("sleepScoreFactorFeedback"),
+                },
+                "recovery_time": {
+                    "percent": readiness.get("recoveryTimeFactorPercent"),
+                    "feedback": readiness.get("recoveryTimeFactorFeedback"),
+                },
+                "acwr": {
+                    "percent": readiness.get("acwrFactorPercent"),
+                    "feedback": readiness.get("acwrFactorFeedback"),
+                },
+                "stress_history": {
+                    "percent": readiness.get("stressHistoryFactorPercent"),
+                    "feedback": readiness.get("stressHistoryFactorFeedback"),
+                },
+                "hrv": {
+                    "percent": readiness.get("hrvFactorPercent"),
+                    "feedback": readiness.get("hrvFactorFeedback"),
+                },
+                "sleep_history": {
+                    "percent": readiness.get("sleepHistoryFactorPercent"),
+                    "feedback": readiness.get("sleepHistoryFactorFeedback"),
+                },
+            },
+        }
+        for entry in readiness_candidates:
+            recovery = entry.get("recoveryTime")
+            readiness_history.append({
+                "date": entry.get("calendarDate") or (entry.get("timestampLocal") or "")[:10] or None,
+                "score": entry.get("score"),
+                "level": entry.get("level"),
+                "sleep_score": entry.get("sleepScore"),
+                "recovery_time_h": (
+                    round(recovery / 60, 1) if isinstance(recovery, (int, float)) else None
+                ),
+                "hrv_weekly_average": entry.get("hrvWeeklyAverage"),
+            })
+        readiness_history.sort(key=lambda entry: entry["date"] or "")
+
+    # Four-week load balance with target ranges (dedicated endpoint)
+    four_week_load = None
+    try:
+        fw_raw = as_dict(client.get_training_four_week_load_balance(today))
+        fw_map = as_dict(fw_raw.get("metricsTrainingLoadBalanceDTOMap"))
+        fw_stats = next(
+            (v for v in fw_map.values() if isinstance(v, dict) and v.get("primaryTrainingDevice")),
+            next((v for v in fw_map.values() if isinstance(v, dict)), None),
+        )
+        if fw_stats:
+            four_week_load = {
+                "date": fw_stats.get("calendarDate"),
+                "feedback": fw_stats.get("trainingBalanceFeedbackPhrase"),
+                "aerobic_low": {
+                    "load": round(fw_stats.get("monthlyLoadAerobicLow", 0)),
+                    "target_min": fw_stats.get("monthlyLoadAerobicLowTargetMin"),
+                    "target_max": fw_stats.get("monthlyLoadAerobicLowTargetMax"),
+                },
+                "aerobic_high": {
+                    "load": round(fw_stats.get("monthlyLoadAerobicHigh", 0)),
+                    "target_min": fw_stats.get("monthlyLoadAerobicHighTargetMin"),
+                    "target_max": fw_stats.get("monthlyLoadAerobicHighTargetMax"),
+                },
+                "anaerobic": {
+                    "load": round(fw_stats.get("monthlyLoadAnaerobic", 0)),
+                    "target_min": fw_stats.get("monthlyLoadAnaerobicTargetMin"),
+                    "target_max": fw_stats.get("monthlyLoadAnaerobicTargetMax"),
+                },
+            }
+    except Exception:
+        pass
+
+    # Fitness age and the components Garmin derives it from
+    fitness_age = None
+    try:
+        fa_raw = as_dict(client.get_fitnessage_data(today))
+        if fa_raw:
+            comps = as_dict(fa_raw.get("components"))
+
+            def _component(name: str) -> Any:
+                return as_dict(comps.get(name)).get("value")
+
+            def _round1(value: Any) -> float | None:
+                return round(value, 1) if isinstance(value, (int, float)) else None
+
+            fitness_age = {
+                "chronological_age": fa_raw.get("chronologicalAge"),
+                "fitness_age": _round1(fa_raw.get("fitnessAge")),
+                "achievable_fitness_age": _round1(fa_raw.get("achievableFitnessAge")),
+                "previous_fitness_age": _round1(fa_raw.get("previousFitnessAge")),
+                "last_updated": fa_raw.get("lastUpdated"),
+                "components": {
+                    "resting_hr": _component("rhr"),
+                    "body_fat": _component("bodyFat"),
+                    "vigorous_days_avg": _component("vigorousDaysAvg"),
+                    "vigorous_minutes_avg": _component("vigorousMinutesAvg"),
+                },
+            }
+    except Exception:
+        pass
+
+    resting_hr = get_first(readiness, "restingHeartRate") if isinstance(readiness, dict) else None
+    if resting_hr is None:
+        with suppress(Exception):
+            resting_hr = client.get_user_summary(today).get("restingHeartRate")
+
     return {
         "training_status": training_status_value,
         "training_status_phrase": training_status_phrase,
         "vo2max": vo2max_value,
         "acute_load": acute_load,
         "acute_load_status": acwr_status,
+        "acute_load_detail": acute_load_detail,
         "load_focus": load_focus,
         "load": load_value,
+        "four_week_load": four_week_load,
+        "fitness_age": fitness_age,
+        "readiness": readiness_detail,
+        "readiness_history": readiness_history,
         "recovery_time_h": (
             round(readiness["recoveryTime"] / 60, 1)
             if isinstance(readiness, dict) and isinstance(readiness.get("recoveryTime"), (int, float))
@@ -273,11 +422,7 @@ def get_training_status() -> dict:
         ),
         "readiness_score": get_first(readiness, "score") if isinstance(readiness, dict) else None,
         "sleep_score": get_first(readiness, "sleepScore") if isinstance(readiness, dict) else None,
-        "resting_hr": (
-            get_first(readiness, "restingHeartRate")
-            if isinstance(readiness, dict)
-            else None
-        ),
+        "resting_hr": resting_hr,
         "source_dates": {
             "status": today,
             "vo2max_candidates": dates_to_try,
@@ -290,9 +435,30 @@ def get_training_status() -> dict:
     }
 
 
+def _iter_workout_steps(steps: list[Any]):
+    """Yield steps and any repeat-group children in their declared order."""
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        yield step
+        yield from _iter_workout_steps(as_list(step.get("workoutSteps")))
+
+
 def _extract_target(workout: dict) -> dict:
     """Extract pace/heart-rate zone targets from a workout structure."""
-    steps = as_list(workout.get("workoutSteps"))
+    # Newer Garmin responses nest the steps under workoutSegments; older
+    # payloads keep them at the top level.
+    segments = as_list(workout.get("workoutSegments"))
+    if segments:
+        steps = [
+            step
+            for segment in segments
+            if isinstance(segment, dict)
+            for step in _iter_workout_steps(as_list(segment.get("workoutSteps")))
+        ]
+    else:
+        steps = list(_iter_workout_steps(as_list(workout.get("workoutSteps"))))
+
     targets = []
     for step in steps:
         target = as_dict(step.get("targetType"))
@@ -300,9 +466,11 @@ def _extract_target(workout: dict) -> dict:
             targets.append({
                 "step": step.get("stepOrder"),
                 "type": target.get("workoutTargetTypeKey"),
-                "min": target.get("targetValue") or target.get("targetValueOne"),
-                "max": target.get("targetValueHigh") or target.get("targetValueTwo"),
-                "unit": target.get("targetValueUnit"),
+                # Live payloads keep the values beside targetType; older
+                # fixtures/serializers nest them inside it. Support both.
+                "min": target.get("targetValue") or target.get("targetValueOne") or step.get("targetValue") or step.get("targetValueOne"),
+                "max": target.get("targetValueHigh") or target.get("targetValueTwo") or step.get("targetValueHigh") or step.get("targetValueTwo"),
+                "unit": target.get("targetValueUnit") or step.get("targetValueUnit"),
             })
     return {"steps": targets}
 
