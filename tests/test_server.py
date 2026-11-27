@@ -40,6 +40,7 @@ EXPECTED_TOOLS: dict[str, tuple[str, str]] = {
     "garmin_challenges": ("challenges", "get_challenges"),
     "garmin_race_prediction": ("race_prediction", "get_race_prediction"),
     "garmin_personal_records": ("records", "get_personal_records"),
+    "garmin_fastest_splits": ("records", "get_fastest_splits"),
     "garmin_zones": ("zones", "get_zones"),
     "garmin_body_composition": ("body", "get_body_composition"),
     "garmin_add_body_composition": ("body", "add_body_composition"),
