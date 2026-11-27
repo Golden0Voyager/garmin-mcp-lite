@@ -335,7 +335,15 @@ def get_training_status() -> dict:
     # Four-week load balance with target ranges (dedicated endpoint)
     four_week_load = None
     try:
-        fw_raw = as_dict(client.get_training_four_week_load_balance(today))
+        load_balance = getattr(client, "get_training_four_week_load_balance", None)
+        if callable(load_balance):
+            fw_raw = as_dict(load_balance(today))
+        else:
+            # Older garminconnect releases lack the typed helper but retain
+            # connectapi, so use the endpoint directly instead of returning None.
+            fw_raw = as_dict(
+                client.connectapi(f"/metrics-service/metrics/trainingloadbalance/latest/{today}")
+            )
         fw_map = as_dict(fw_raw.get("metricsTrainingLoadBalanceDTOMap"))
         fw_stats = next(
             (v for v in fw_map.values() if isinstance(v, dict) and v.get("primaryTrainingDevice")),
