@@ -97,8 +97,8 @@ def edge_client() -> MagicMock:
     # For activities optional fields: each raises
     fake.get_activity.return_value = {
         "activityName": "Test", "activityTypeDTO": {"typeKey": "running"},
-        "metadataDTO": {"startTimeLocal": "2026-06-18T07:00:00"},
-        "summaryDTO": {"distance": 5000, "duration": 1800, "calories": 300, "averageHR": 140, "maxHR": 165, "averageSpeed": 2.78},
+        "metadataDTO": {"hasHrTimeInZones": True},
+        "summaryDTO": {"startTimeLocal": "2026-06-18T07:00:00", "distance": 5000, "duration": 1800, "calories": 300, "averageHR": 140, "maxHR": 165, "averageSpeed": 2.78},
     }
     fake.get_activity_splits.side_effect = Exception("no splits")
     fake.get_activity_hr_in_timezones.side_effect = Exception("no hr zones")
@@ -165,7 +165,7 @@ class TestTrainingListCalendarItems:
 
 
 class TestActivitiesOptionalFieldsErrors:
-    def test_splits_error_returns_error_dict(self, patch_edge: None) -> None:
+    def test_optional_errors_return_error_dicts(self, patch_edge: None) -> None:
         from garmin_mcp_lite.tools.activities import get_activity_detail
 
         result = get_activity_detail(999, fields=["splits", "hrZones", "laps"])
