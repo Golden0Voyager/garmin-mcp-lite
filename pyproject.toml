@@ -4,7 +4,7 @@ version = "0.1.10"
 description = "精简版 Garmin MCP 服务器 - 专为耐力运动爱好者设计"
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 authors = [
     { name = "Haining Yu", email = "yhn0535@gmail.com" },
 ]
@@ -15,8 +15,9 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
@@ -26,7 +27,7 @@ dependencies = [
     # ModuleNotFoundError before it can speak MCP. Raise this once server.py
     # migrates to the 2.x API.
     "mcp>=1.6.0,<2.0",
-    "garminconnect>=0.2.25",
+    "garminconnect==0.3.20",
     "pydantic>=2.0",
     "curl-cffi>=0.7.0",
     # Xiaomi's health cloud speaks a private RC4/SHA1-signed protocol that has
@@ -94,9 +95,9 @@ source = ["garmin_mcp_lite"]
 omit = ["garmin_mcp_lite/login.py", "garmin_mcp_lite/xiaomi_login.py"]
 
 [tool.coverage.report]
-# Ratcheted from 85 after the suite reached 100%: the 5-point gap is headroom for
-# an awkward branch, not a licence to drop a whole module's tests.
-fail_under = 95
+# The full suite is at 100%; keep the gate at 100 so no statement silently loses
+# its test coverage again.
+fail_under = 100
 show_missing = true
 
 [tool.bandit]
