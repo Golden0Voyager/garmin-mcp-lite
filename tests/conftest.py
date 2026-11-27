@@ -69,18 +69,96 @@ def _build_fake() -> MagicMock:
     fake.get_activity.return_value = {
         "activityName": "Morning Run",
         "activityTypeDTO": {"typeKey": "running"},
-        "metadataDTO": {"startTimeLocal": "2026-06-18 07:30:00"},
+        "metadataDTO": {"hasHrTimeInZones": True, "hasPowerTimeInZones": True},
         "summaryDTO": {
+            "startTimeLocal": "2026-06-18 07:30:00",
             "distance": 5230.0, "duration": 1860.0, "calories": 420.0,
             "averageHR": 148.0, "maxHR": 172.0, "elevationGain": 35.0,
             "averageSpeed": 2.81, "vO2MaxValue": 48,
             "averageRunningCadenceInStepsPerMinute": 82, "steps": 5230,
+            "activityTrainingLoad": 77.4,
+            "trainingEffect": 3.0,
+            "trainingEffectLabel": "AEROBIC_BASE",
+            "anaerobicTrainingEffect": 0.0,
+            "aerobicTrainingEffectMessage": "IMPROVING_AEROBIC_BASE_8",
+            "anaerobicTrainingEffectMessage": "NO_ANAEROBIC_BENEFIT_0",
         },
+    }
+    fake.get_activity_laps.return_value = {"lapDTOs": [{"lapIndex": 1, "distance": 1000.0}]}
+    fake.get_activity_weather.return_value = {
+        "temp": 26.0,
+        "apparentTemp": 28.0,
+        "relativeHumidity": 61.0,
+        "windSpeed": 12.0,
+        "windDirectionCompassPoint": "SE",
+        "weatherTypeDTO": {"desc": "Partly Cloudy"},
+    }
+    fake.get_activity_gear_v2.return_value = [
+        None,
+        {
+            "uuid": "gear_001",
+            "gearType": "SHOES",
+            "name": "Strong Wind 3.0 TR",
+            "brand": "Qiandan",
+            "model": "Strong Wind 3.0 TR",
+            "maxUsageDistanceMeters": 643000.0,
+            "numActivitiesLinked": 51,
+            "distanceUsedMeters": 461664.5,
+        }
+    ]
+    fake.get_activity_typed_splits.return_value = {
+        "activityId": 12345,
+        "splits": [
+            {
+                "type": "INTERVAL_ACTIVE",
+                "distance": 5230.0,
+                "duration": 1860.0,
+                "averageSpeed": 2.81,
+                "averageHR": 148.0,
+            }
+        ],
     }
 
     # -- health --
     fake.get_sleep_data.return_value = {
-        "dailySleepDTO": {"sleepTimeInMinutes": 420, "deepSleepMinutes": 90, "remSleepMinutes": 105, "awakeCount": 3, "sleepScore": 78},
+        "dailySleepDTO": {
+            "sleepTimeSeconds": 25200,
+            "deepSleepSeconds": 5400,
+            "lightSleepSeconds": 12000,
+            "remSleepSeconds": 6300,
+            "awakeSleepSeconds": 1260,
+            "awakeCount": 3,
+            "sleepStartTimestampLocal": "2026-06-17T23:00:00.0",
+            "sleepEndTimestampLocal": "2026-06-18T06:00:00.0",
+            "averageSpO2Value": 96.0,
+            "lowestSpO2Value": 92.0,
+            "averageRespirationValue": 14.5,
+            "lowestRespirationValue": 11.8,
+            "highestRespirationValue": 17.2,
+            "avgSleepStress": 18,
+            "sleepScores": {
+            "overall": {"value": 78, "qualifierKey": "FAIR"},
+            "deepPercentage": {"value": 22, "qualifierKey": "EXCELLENT"},
+            "totalDuration": {"qualifierKey": "GOOD"},
+        },
+        },
+        "restlessMomentsCount": 6,
+        "avgOvernightHrv": 52.0,
+        "hrvStatus": "BALANCED",
+        "bodyBatteryChange": 40,
+        "restingHeartRate": 45,
+    }
+    fake.get_lifestyle_logging_data.return_value = {
+        "calendarDate": "2026-11-27",
+        "dailyLogsReport": [
+            {"name": "Alcohol", "category": "LIFESTYLE", "measurementType": "QUANTITY", "sleepRelated": False},
+            {"name": "Morning Caffeine", "category": "LIFESTYLE", "measurementType": "QUANTITY", "sleepRelated": False},
+            {"name": "Screens Before Bed", "category": "SLEEP_RELATED", "measurementType": "NONE", "sleepRelated": True},
+        ],
+        "completionStats": [
+            {"calendarDate": "2026-11-26", "totalTracking": 15, "completedTracking": 2},
+            {"calendarDate": "2026-11-27", "totalTracking": 15, "completedTracking": 1},
+        ],
     }
     fake.get_hrv_data.return_value = {
         "hrvSummary": {
@@ -112,13 +190,33 @@ def _build_fake() -> MagicMock:
         "workoutId": 999, "workoutName": "Easy Recovery Run",
         "sportType": {"sportTypeKey": "running"}, "estimatedDurationInSecs": 2700,
         "description": "Easy recovery run at conversational pace.",
-        "workoutSteps": [{"stepOrder": 1, "targetType": {"workoutTargetTypeKey": "pace", "targetValueOne": 5.5, "targetValueTwo": 6.5, "targetValueUnit": "min/km"}}],
+        "workoutSegments": [
+            {
+                "segmentOrder": 1,
+                "workoutSteps": [
+                    {"stepOrder": 1, "targetType": {"workoutTargetTypeKey": "pace"}, "targetValueOne": 5.5, "targetValueTwo": 6.5, "targetValueUnit": "min/km"},
+                ],
+            }
+        ],
     }
     fake.get_max_metrics.return_value = [{"generic": {"vo2MaxValue": 48, "vo2MaxPreciseValue": 48.2}}]
     fake.get_training_status.return_value = {
         "mostRecentTrainingStatus": {
             "latestTrainingStatusData": {
-                "dev1": {"primaryTrainingDevice": True, "trainingStatus": 6, "trainingStatusFeedbackPhrase": "Productive training load", "acuteTrainingLoadDTO": {"dailyTrainingLoadAcute": 280, "acwrStatus": "OPTIMAL"}},
+                "dev1": {
+                    "primaryTrainingDevice": True,
+                    "trainingStatus": 6,
+                    "trainingStatusFeedbackPhrase": "Productive training load",
+                    "acuteTrainingLoadDTO": {
+                        "dailyTrainingLoadAcute": 280,
+                        "dailyTrainingLoadChronic": 636,
+                        "dailyAcuteChronicWorkloadRatio": 0.9,
+                        "acwrPercent": 38,
+                        "acwrStatus": "OPTIMAL",
+                        "minTrainingLoadChronic": 508.8,
+                        "maxTrainingLoadChronic": 954.0,
+                    },
+                },
             },
         },
         "mostRecentTrainingLoadBalance": {
@@ -129,13 +227,90 @@ def _build_fake() -> MagicMock:
         },
     }
     fake.get_training_readiness.return_value = [{"score": 85, "recoveryTime": 720, "sleepScore": 82, "restingHeartRate": 48, "calendarDate": "2026-06-18", "timestampLocal": "2026-06-18T08:00:00"}]
+    fake.get_rhr_daily.return_value = [
+        None,
+        {"calendarDate": "2026-06-17", "value": 50.0},
+        {"calendarDate": "2026-06-18", "value": 48.0},
+    ]
+    # Live endpoint returns newest-first, same as get_training_readiness_range.
+    fake.get_training_readiness_range.return_value = [
+        {
+            "score": 85,
+            "level": "HIGH",
+            "recoveryTime": 720,
+            "sleepScore": 82,
+            "restingHeartRate": 48,
+            "calendarDate": "2026-06-18",
+            "timestampLocal": "2026-06-18T08:00:00",
+            "feedbackShort": "GOOD_TO_GO",
+            "feedbackLong": "READY_FOR_CHALLENGE",
+            "hrvWeeklyAverage": 52,
+            "sleepScoreFactorPercent": 88,
+            "sleepScoreFactorFeedback": "GOOD",
+            "recoveryTimeFactorPercent": 90,
+            "recoveryTimeFactorFeedback": "GOOD",
+            "acwrFactorPercent": 93,
+            "acwrFactorFeedback": "GOOD",
+            "stressHistoryFactorPercent": 97,
+            "stressHistoryFactorFeedback": "GOOD",
+            "hrvFactorPercent": 53,
+            "hrvFactorFeedback": "MODERATE",
+            "sleepHistoryFactorPercent": 65,
+            "sleepHistoryFactorFeedback": "MODERATE",
+        },
+        {
+            "score": 70,
+            "level": "MODERATE",
+            "recoveryTime": 1080,
+            "sleepScore": 74,
+            "restingHeartRate": 50,
+            "calendarDate": "2026-06-17",
+            "timestampLocal": "2026-06-17T08:00:00",
+        },
+    ]
+    fake.get_training_four_week_load_balance.return_value = {
+        "userId": 123456,
+        "metricsTrainingLoadBalanceDTOMap": {
+            "dev1": {
+                "calendarDate": "2026-06-18",
+                "deviceId": 1,
+                "monthlyLoadAerobicLow": 1251.9,
+                "monthlyLoadAerobicHigh": 1112.1,
+                "monthlyLoadAnaerobic": 120.2,
+                "monthlyLoadAerobicLowTargetMin": 433,
+                "monthlyLoadAerobicLowTargetMax": 952,
+                "monthlyLoadAerobicHighTargetMin": 519,
+                "monthlyLoadAerobicHighTargetMax": 1039,
+                "monthlyLoadAnaerobicTargetMin": 173,
+                "monthlyLoadAnaerobicTargetMax": 519,
+                "trainingBalanceFeedbackPhrase": "ANAEROBIC_SHORTAGE",
+                "primaryTrainingDevice": True,
+            }
+        },
+    }
+    fake.get_fitnessage_data.return_value = {
+        "chronologicalAge": 38,
+        "fitnessAge": 30.105706878811105,
+        "achievableFitnessAge": 32.587329130811334,
+        "previousFitnessAge": 30.105706878811105,
+        "components": {
+            "bodyFat": {"value": 16.5, "stale": False, "lastMeasurementDate": "2026-06-18"},
+            "rhr": {"value": 43, "stale": False},
+            "vigorousDaysAvg": {"value": 5.0, "stale": False, "numOfWeeksForIm": 6},
+            "vigorousMinutesAvg": {"value": 291.3, "stale": False, "numOfWeeksForIm": 6},
+        },
+        "lastUpdated": "2026-06-18T00:00:00.0",
+    }
 
     # -- challenges --
     fake.get_inprogress_virtual_challenges.return_value = [{"badgeChallengeName": "Climb 5000m", "badgeProgressValue": 3200, "badgeTargetValue": 5000, "badgePoints": 100}]
     fake.get_badge_challenges.return_value = [{"badgeChallengeName": "June Challenge", "startDate": "2026-06-01T00:00:00", "endDate": "2026-06-30T00:00:00", "badgeProgressValue": 45, "badgeTargetValue": 100, "badgeUnitId": 1, "badgePoints": 50, "userJoined": True}]
 
     # -- coach --
-    fake.get_training_plans.return_value = [{"trainingPlanId": "plan_001", "trainingPlanName": "Half Marathon Plan", "sportType": {"sportTypeKey": "running"}, "trainingPlanStatus": "ACTIVE", "startDate": "2026-06-01", "endDate": "2026-08-15", "trainingPlanGoal": "Complete half marathon"}]
+    fake.get_training_plans.return_value = {
+        "trainingPlanList": [{"trainingPlanId": "plan_001", "trainingPlanName": "Half Marathon Plan", "sportType": {"sportTypeKey": "running"}, "trainingPlanStatus": "ACTIVE", "startDate": "2026-06-01", "endDate": "2026-08-15", "trainingPlanGoal": "Complete half marathon"}],
+        "searchFilter": {},
+    }
 
     # -- device --
     fake.get_devices.return_value = [{"deviceId": 123, "displayName": "My Fenix 7", "partNumber": "F7X-045-01", "currentFirmwareVersion": "28.10", "softwareUpdates": [], "deviceStatus": "ACTIVE", "primaryActivityTrackerIndicator": True, "primaryTrainingCapable": True, "registeredDate": 1700000000000, "connected": True}]
@@ -199,9 +374,9 @@ def _build_fake() -> MagicMock:
             return {
                 "activityId": 88002,
                 "activityName": "Strength Session",
-                "startTimeLocal": "2026-11-08 17:53:11",
                 "activityType": {"typeKey": "strength_training"},
                 "summaryDTO": {
+                    "startTimeLocal": "2026-11-08T17:53:11.0",
                     "duration": 2400.0,
                     "averageHR": 85.0,
                     "maxHR": 120.0,
@@ -260,6 +435,11 @@ def _build_fake() -> MagicMock:
     # -- gear --
     fake.get_gear.return_value = [{"uuid": "gear_001", "customMakeModel": "Nike Vaporfly 3", "gearTypeName": "running_shoes", "maximumMeters": 800000, "retired": False, "defaultGear": True}]
     fake.get_gear_stats.return_value = {"totalDistance": 450000}
+    fake.get_fastest_splits.return_value = [
+        {"distance": 1000, "activityId": 24193607983, "activityDate": "2026-09-01", "time": 195.772},
+        {"distance": 1000, "activityId": 22032716924, "activityDate": "2026-03-02", "time": 203.314},
+        {"distance": 5000, "activityId": 24193607983, "activityDate": "2026-09-01", "time": 991.505},
+    ]
 
     # -- race prediction --
     def _fake_race_predictions(startdate: str | None = None, enddate: str | None = None, _type: str | None = None) -> object:
