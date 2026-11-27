@@ -1,7 +1,25 @@
 from typing import Any, Literal
 
 from garmin_mcp_lite.client import get_client
-from garmin_mcp_lite.tools._common import format_duration
+from garmin_mcp_lite.tools._common import (
+    as_list,
+    days_ago_str,
+    format_duration,
+    format_pace,
+    today_str,
+)
+
+# Garmin's fastest-split rows use metres; these are the distances it reports.
+_SPLIT_LABELS: dict[int, str] = {
+    1000: "1k",
+    1609: "1mile",
+    5000: "5k",
+    10000: "10k",
+    21098: "half_marathon",
+    42195: "marathon",
+}
+
+_PERIOD_DAYS = {"90d": 90, "180d": 180, "365d": 365}
 
 # Garmin's PR typeId -> (label, sport, kind). Only the endurance-relevant records
 # are mapped: strength-rep and wheelchair PRs are deliberately left out so the
@@ -79,7 +97,7 @@ def get_personal_records(
         label, record_sport, kind = _RECORDS[type_id]
         if sport != "all" and record_sport != sport:
             continue
-        row = next((r for r in raw or [] if isinstance(r, dict) and r.get("typeId") == type_id), None)
+        row = next((r for r in as_list(raw) if isinstance(r, dict) and r.get("typeId") == type_id), None)
         if row is None:
             continue
         value = _format_value(kind, row.get("value"))
@@ -96,4 +114,88 @@ def get_personal_records(
         "sport": sport,
         "count": len(records),
         "records": records,
+    }
+
+
+def _split_label(distance: float) -> str:
+    if int(distance) in _SPLIT_LABELS:
+        return _SPLIT_LABELS[int(distance)]
+    if distance >= 1000:
+        return f"{distance / 1000:g}k"
+    return f"{int(distance)}m"
+
+
+def get_fastest_splits(
+    period: Literal["90d", "180d", "365d"] = "365d",
+    per_distance: int = 3,
+) -> dict:
+    """Get the fastest running split efforts Garmin recorded, by distance.
+
+    Garmin tracks best rolling efforts at standard distances (1k, 1 mile, 5k,
+    10k, half and full marathon) inside longer activities, so these are not
+    the same as personal records: a 5k best can come from the middle of a
+    long run.
+
+    Args:
+        period: Look-back window. One of: "90d", "180d", "365d".
+        per_distance: How many top efforts to keep per distance (default 3).
+    """
+    client = get_client()
+
+    days = _PERIOD_DAYS.get(period, 365)
+    end = today_str()
+    start = days_ago_str(days)
+    per_distance = max(1, per_distance)
+
+    try:
+        raw = client.get_fastest_splits(start, end, "running", per_distance)
+    except Exception as e:
+        return {"error": str(e)}
+
+    grouped: dict[float, list[dict[str, Any]]] = {}
+    for row in as_list(raw):
+        if not isinstance(row, dict):
+            continue
+        distance = row.get("distance")
+        seconds = row.get("time")
+        if (
+            not isinstance(distance, (int, float))
+            or not isinstance(seconds, (int, float))
+            or seconds <= 0
+            or distance <= 0
+        ):
+            continue
+        grouped.setdefault(float(distance), []).append(row)
+
+    splits = []
+    for distance in sorted(grouped):
+        rows = sorted(grouped[distance], key=lambda row: row["time"])[:per_distance]
+        top = []
+        for row in rows:
+            seconds = float(row["time"])
+            top.append({
+                "time": format_duration(seconds),
+                "seconds": round(seconds, 1),
+                "pace": format_pace(seconds / (distance / 1000)),
+                "date": row.get("activityDate"),
+                "activity_id": row.get("activityId"),
+            })
+        best = top[0]
+        splits.append({
+            "distance": _split_label(distance),
+            "distance_m": int(distance),
+            "best_time": best["time"],
+            "pace": best["pace"],
+            "date": best["date"],
+            "activity_id": best["activity_id"],
+            "top": top,
+        })
+
+    return {
+        "metric": "fastest_splits",
+        "activity_type": "running",
+        "period": period,
+        "date_range": f"{start} ~ {end}",
+        "count": len(splits),
+        "splits": splits,
     }

@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from garmin_mcp_lite.client import get_client
+from garmin_mcp_lite.tools._common import as_list
 
 
 def get_challenges() -> dict:
@@ -15,7 +16,8 @@ def get_challenges() -> dict:
 
     # 1. Virtual challenges (climbing, hiking, etc.)
     try:
-        virtual = client.get_inprogress_virtual_challenges(1, 50)
+        # Both endpoints are annotated as dict but return a list of challenges.
+        virtual = as_list(client.get_inprogress_virtual_challenges(1, 50))
         for v in virtual:
             progress = v.get("badgeProgressValue", 0)
             target = v.get("badgeTargetValue", 0)
@@ -33,7 +35,7 @@ def get_challenges() -> dict:
 
     # 2. Badge challenges (monthly challenges, etc.)
     try:
-        badges = client.get_badge_challenges(1, 100)
+        badges = as_list(client.get_badge_challenges(1, 100))
         for b in badges:
             start_str = b.get("startDate")
             end_str = b.get("endDate")

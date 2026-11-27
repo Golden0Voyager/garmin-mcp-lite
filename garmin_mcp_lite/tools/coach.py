@@ -1,4 +1,5 @@
 from garmin_mcp_lite.client import get_client
+from garmin_mcp_lite.tools._common import as_list
 
 
 def _summarize_plan(plan_id, detail: dict) -> dict:
@@ -18,12 +19,16 @@ def get_coach_plans() -> dict:
     client = get_client()
 
     try:
-        plans = client.get_training_plans()
+        raw_plans = client.get_training_plans()
     except Exception as e:
         return {"error": str(e), "plans": []}
 
+    # Newer garminconnect returns {"trainingPlanList": [...]}; older versions
+    # and some endpoints return the list directly.
+    plans = as_list(raw_plans.get("trainingPlanList")) if isinstance(raw_plans, dict) else as_list(raw_plans)
+
     result = []
-    for plan in plans or []:
+    for plan in plans:
         if isinstance(plan, dict):
             result.append(_summarize_plan(plan.get("trainingPlanId"), plan))
         elif isinstance(plan, str):

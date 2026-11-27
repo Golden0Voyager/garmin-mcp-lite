@@ -24,12 +24,14 @@ class TestGetStrengthAnalysis:
         session = res["sessions"][0]
         assert session["id"] == 88002
         assert session["name"] == "Strength Session"
+        assert session["date"] == "2026-11-08T17:53:11"
         assert session["active_sets"] == 2
         assert session["rest_sets"] == 1
         assert session["total_reps"] == 22  # 10 + 12
         assert session["total_volume_kg"] == 840.0  # 60kg * 10 + 20kg * 12
         assert session["muscle_group_distribution"]["legs_glutes"] == 1
         assert session["muscle_group_distribution"]["upper_body"] == 1
+        assert session["classification_status"] == "classified"
         assert "下肢与臀腿" in session["runner_fatigue_alert"]
         assert len(session["exercises_sample"]) == 2
 
@@ -52,6 +54,37 @@ class TestGetStrengthAnalysis:
         session = res["sessions"][0]
         assert session["muscle_group_distribution"]["legs_glutes"] == 0
         assert "负担较小" in session["runner_fatigue_alert"]
+
+    def test_unknown_exercises_do_not_infer_training_advice(self, mock_get_client: MagicMock) -> None:
+        def _fake_connect(path: str) -> dict:
+            if path == "/activity-service/activity/88007":
+                return {
+                    "activityId": 88007,
+                    "activityName": "Strength",
+                    "summaryDTO": {"startTimeLocal": "2026-11-26T18:45:51.0", "duration": 2760.0},
+                }
+            if path == "/activity-service/activity/88007/exerciseSets":
+                return {
+                    "exerciseSets": [
+                        {
+                            "setType": "ACTIVE",
+                            "duration": 60.0,
+                            "repetitionCount": 50,
+                            "weight": 50000.0,
+                            "exercises": [{"category": "UNKNOWN", "name": None, "probability": 99.6}],
+                        }
+                    ]
+                }
+            return {}
+
+        mock_get_client.connectapi.side_effect = _fake_connect
+
+        session = get_strength_analysis(activity_id=88007)["sessions"][0]
+
+        assert session["classification_status"] == "insufficient"
+        assert session["muscle_group_distribution"]["other"] == 1
+        assert "无法判断" in session["runner_fatigue_alert"]
+        assert "可正常" not in session["runner_fatigue_alert"]
 
     def test_list_recent_strength_sessions(self, mock_get_client: MagicMock) -> None:
         mock_get_client.get_activities.return_value = [

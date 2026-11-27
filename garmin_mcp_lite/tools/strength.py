@@ -53,9 +53,8 @@ def _classify_exercise_category(category: str | None) -> str:
 def _format_strength_session(act_info: dict[str, Any], sets_data: dict[str, Any] | None) -> dict[str, Any]:
     act_id = act_info.get("activityId")
     name = act_info.get("activityName")
-    start_time = act_info.get("startTimeLocal")
-
     summary = as_dict(act_info.get("summaryDTO")) or act_info
+    start_time = summary.get("startTimeLocal") or act_info.get("startTimeLocal")
     dur_s = summary.get("duration")
     avg_hr = summary.get("averageHR")
     max_hr = summary.get("maxHR")
@@ -122,7 +121,10 @@ def _format_strength_session(act_info: dict[str, Any], sets_data: dict[str, Any]
         active_sets_count = int(summary["activeSets"])
 
     has_leg_training = muscle_counts["legs_glutes"] > 0
-    if has_leg_training:
+    classified_sets = sum(muscle_counts[group] for group in ("legs_glutes", "upper_body", "core"))
+    if classified_sets == 0:
+        fatigue_alert = "Garmin 未提供可识别的动作分类，无法判断主要肌群或给出次日训练建议。"
+    elif has_leg_training:
         fatigue_alert = "涉及下肢与臀腿负重训练，动力链微损伤处于恢复窗口。建议次日避免安排高强度乳酸门槛跑或长距离LSD，优先安排轻松有氧慢跑(E跑)或休整。"
     else:
         fatigue_alert = "主要为上肢、背部或核心稳定性训练，对下肢跑步推进肌群负担较小，次日可正常按计划执行跑步训练。"
@@ -137,6 +139,7 @@ def _format_strength_session(act_info: dict[str, Any], sets_data: dict[str, Any]
         "total_reps": total_reps if total_reps > 0 else None,
         "total_volume_kg": round(total_volume_kg, 1) if total_volume_kg > 0 else None,
         "muscle_group_distribution": muscle_counts,
+        "classification_status": "classified" if classified_sets else "insufficient",
         "runner_fatigue_alert": fatigue_alert,
         "avg_hr": int(avg_hr) if isinstance(avg_hr, (int, float)) else None,
         "max_hr": int(max_hr) if isinstance(max_hr, (int, float)) else None,

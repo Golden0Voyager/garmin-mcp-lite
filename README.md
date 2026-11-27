@@ -24,7 +24,7 @@ It exposes **28 precisely-curated endpoints** for deep analysis of running, cycl
 
 21 of them read. Seven write: `garmin_add_body_composition` for a single manual weigh-in, `garmin_sync_weight` to pull them from a Xiaomi body-fat scale, `garmin_sync_healthkit` for scales whose apps write to Apple Health, `garmin_schedule_running_workout` / `garmin_schedule_cycling_workout` to schedule structured running and cycling workouts to your Garmin calendar, and `garmin_add_event` / `garmin_delete_event` to manage race calendar events.
 
-## Core Tools (28)
+## Core Tools (29)
 
 ### 🔧 Setup & Diagnosis
 
@@ -37,13 +37,14 @@ It exposes **28 precisely-curated endpoints** for deep analysis of running, cycl
 | Tool | Functionality |
 |:---|:---|
 | `garmin_activities` | List running/cycling/swimming/diving records with date & type filters. |
-| `garmin_activity_detail` | Get single activity details (pace, heart rate zones, splits, laps). |
+| `garmin_activity_detail` | Get single activity details (pace, heart rate zones, splits, laps) plus training load and aerobic/anaerobic training effect. Optional `fields`: `"splits"`, `"hrZones"`, `"laps"`, `"weather"`, `"gear"`, `"typedSplits"`. |
 | `garmin_training_plan` | Get today's or a specific date's scheduled training workout. |
-| `garmin_training_status` | Get training status, VO2Max, **acute load**, **load focus distribution** (aerobic/anaerobic), recovery time, and training readiness score. |
+| `garmin_training_status` | Get training status, VO2Max, **acute load with ACWR detail**, **4-week load balance against target ranges**, recovery time, training readiness with factor breakdown and 7-day history, and fitness age. |
 | `garmin_weekly_stats` | Get weekly/monthly/yearly training volume statistics. |
 | `garmin_coach` | Overview of current Garmin Coach training plans. |
 | `garmin_race_prediction` | Predicted 5K/10K/half/marathon finish times with pace, plus the change over a 90-day or 1-year window. |
 | `garmin_personal_records` | Personal bests (1K → marathon, longest run/ride, swim times, step records) with the activity that set each one. |
+| `garmin_fastest_splits` | Fastest rolling efforts Garmin recorded at 1K, 1 mile, 5K, 10K, half and full marathon inside longer runs, with pace, date, and activity ID. |
 | `garmin_schedule_running_workout` | **Write** a structured running workout (steady, warmup, intervals, cooldown with pace zones) and schedule it to your Garmin calendar. |
 | `garmin_schedule_cycling_workout` | **Write** a structured cycling workout with power/FTP targets and schedule it to your Garmin calendar. |
 | `garmin_cycling_power` | Get cycling FTP, power metrics (NP, IF, TSS), cadence, and recent rides. |
@@ -54,8 +55,8 @@ It exposes **28 precisely-curated endpoints** for deep analysis of running, cycl
 
 | Tool | Functionality |
 |:---|:---|
-| `garmin_health` | Get comprehensive health metrics: sleep quality, HRV status, stress, body battery, **SpO2**, **respiration rate**, **intensity minutes**, **daily steps**, **floors climbed**, and resting heart rate. Supports `metric` parameter for targeted queries. |
-| `garmin_hr_trend` | Get resting heart rate trends for the last 7/30/90 days. |
+| `garmin_health` | Get comprehensive health metrics: detailed sleep (stages, score components, overnight HRV/SpO2/respiration/stress), lifestyle-log completion, HRV status, stress, body battery, **SpO2**, **respiration rate**, **intensity minutes**, **daily steps**, **floors climbed**, and resting heart rate. Supports `metric` parameter for targeted queries. |
+| `garmin_hr_trend` | Get resting heart rate trends for the last 7/30/90 days, plus the full chronological series for charting. |
 | `garmin_hrv_status` | Get overnight HRV status, baseline range, and recovery training guidance. |
 | `garmin_zones` | Heart rate zone boundaries (bpm ranges) per sport, plus lactate threshold and FTP. Use it to interpret the `hrZones` durations returned by `garmin_activity_detail`. |
 
@@ -383,6 +384,14 @@ python test_e2e.py
 | Schema cost | High | ~3k tokens for all 28 tools |
 
 ## Changelog
+
+### Unreleased
+- New: `garmin_fastest_splits` — fastest rolling efforts at 1K, 1 mile, 5K, 10K, half and full marathon, with pace, date, and source activity.
+- `garmin_health`: sleep now includes full stage breakdown, score components, sleep window, overnight SpO2/respiration/stress/HRV, restless moments, and body-battery change; new `lifestyle` metric reports daily-log completion counts and tracked items.
+- `garmin_training_status`: training readiness now includes level, feedback, per-factor percentages, and a 7-day history; load balance includes 4-week target ranges; acute load gains ACWR ratio/min/max; adds fitness age with its components.
+- `garmin_hr_trend`: resting HR now comes from one bulk request instead of a per-day scan (6-worker scan kept as fallback), and returns the full chronological `series`.
+- `garmin_activity_detail`: training load and aerobic/anaerobic training effect are now returned by default; optional `fields` gain `"weather"`, `"gear"`, and `"typedSplits"`.
+- Fix: sleep stage minutes were guessed from magnitude, so a 21-minute awake period reported as 1260 minutes. Seconds fields are now divided explicitly.
 
 ### 0.1.10
 - New: `garmin_schedule_running_workout` — write and schedule structured running workouts (steady, warmup, intervals, cooldown with pace zones) to your Garmin calendar.
