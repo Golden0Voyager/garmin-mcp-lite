@@ -1,7 +1,7 @@
 from typing import Any, Literal
 
 from garmin_mcp_lite.client import get_client
-from garmin_mcp_lite.tools._common import format_pace
+from garmin_mcp_lite.tools._common import as_dict, format_pace
 
 _ZONE_LABELS = {1: "recovery", 2: "aerobic", 3: "tempo", 4: "threshold", 5: "anaerobic"}
 
@@ -93,7 +93,10 @@ def get_zones(
 
     if sport == "cycling":
         try:
-            ftp = client.get_cycling_ftp()
+            ftp_raw = client.get_cycling_ftp()
+            # The library annotates this as dict | list[dict]; the endpoint has
+            # returned a single dict for every version this project supports.
+            ftp = as_dict(ftp_raw[0]) if isinstance(ftp_raw, list) and ftp_raw else as_dict(ftp_raw)
             result["ftp"] = {
                 "watts": ftp.get("functionalThresholdPower"),
                 "date": (ftp.get("calendarDate") or "")[:10] or None,
