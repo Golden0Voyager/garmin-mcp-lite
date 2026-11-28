@@ -20,7 +20,7 @@
 
 A lightweight Garmin Model Context Protocol (MCP) server, designed specifically for endurance athletes.
 
-It exposes **28 precisely-curated endpoints** for deep analysis of running, cycling, swimming, diving, strength, and health data — replacing bulky 80+ endpoint alternatives with a clean, focused toolset.
+It exposes **29 precisely-curated endpoints** for deep analysis of running, cycling, swimming, diving, strength, and health data — replacing bulky 80+ endpoint alternatives with a clean, focused toolset.
 
 21 of them read. Seven write: `garmin_add_body_composition` for a single manual weigh-in, `garmin_sync_weight` to pull them from a Xiaomi body-fat scale, `garmin_sync_healthkit` for scales whose apps write to Apple Health, `garmin_schedule_running_workout` / `garmin_schedule_cycling_workout` to schedule structured running and cycling workouts to your Garmin calendar, and `garmin_add_event` / `garmin_delete_event` to manage race calendar events.
 
@@ -189,8 +189,35 @@ GUI clients such as Chatbox are launched from Finder and do **not** inherit your
 |:---|:---|:---|
 | `GARMIN_IS_CN` | unset | Set to `true` for accounts registered with Garmin China (garmin.cn). Must match the region used at login. |
 | `GARMIN_TOKEN_DIR` | `~/.garmin-mcp-lite` | Where the session token lives. Change it to isolate multiple accounts. |
+| `GARMIN_LEDGER_DIR` | `~/.garmin-mcp-lite/ledger` | Where the daily JSON/Markdown ledgers are written. |
+| `GARMIN_LOG_DIR` | `~/.garmin-mcp-lite/logs` | Where the rotating, redacted ledger log is written. |
 | `GARMIN_HEALTH_FILE` | iCloud Drive `garmin/weight.txt` | The file the Apple Health bridge Shortcut appends to. |
 | `GARMIN_EMAIL` / `GARMIN_PASSWORD` | unset | Login script only. Never needed by the server itself. |
+
+### Daily Ledger CLI
+
+`garmin-mcp-lite-ledger` writes a private local ledger without an MCP client:
+
+```bash
+garmin-mcp-lite-ledger morning
+garmin-mcp-lite-ledger evening
+garmin-mcp-lite-ledger morning --date 2026-11-26  # backfill a missed wake date
+```
+
+Each day produces `YYYY-MM-DD.json` (canonical data) and `YYYY-MM-DD.md` (readable report) under `~/.garmin-mcp-lite/ledger/`. The morning entry combines HRV status, baseline context, sleep stages and recovery guidance. The evening entry aggregates all activities for the date, training load/effect, and the current training status. Historical evening backfills keep activities on the requested date but label training status as current at run time.
+
+Override locations with `GARMIN_LEDGER_DIR` and `GARMIN_LOG_DIR`. Directories are `0700`, files are `0600`, writes are locked and atomic, and logs are redacted and rotated. A partial run writes what succeeded and exits non-zero.
+
+#### Qoder Desktop Automations
+
+Create two **local** automations in Qoder Desktop:
+
+| Name | Schedule | Command |
+|:---|:---|:---|
+| `Garmin 晨间恢复台账` | Daily 10:00, `Asia/Shanghai` | `uv run garmin-mcp-lite-ledger morning` |
+| `Garmin 晚间训练复盘` | Daily 22:00, `Asia/Shanghai` | `uv run garmin-mcp-lite-ledger evening` |
+
+Set the work folder to this repository. In each prompt, allow only the listed command, require a zero exit code and the day's Markdown file, prohibit reading or printing credentials, and require failures to report only redacted errors. Qoder must be running at the scheduled time; enable **Keep device awake** and the required **Execution authorization**, then verify each execution in **Automations → Run history**.
 
 ### Troubleshooting
 
@@ -212,7 +239,7 @@ printf '%s\n' \
  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | garmin-mcp-lite
 ```
 
-Expect a `serverInfo` line reporting this package's version, followed by all 20 tools.
+Expect a `serverInfo` line reporting this package's version, followed by all 29 tools.
 
 ## Syncing a Xiaomi Body-Fat Scale
 
