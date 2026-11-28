@@ -749,3 +749,8 @@ class TestReadLedger:
         result = read_ledger("2026-1-1", tmp_path)
         assert result["found"] is False
         assert "YYYY-MM-DD" in result["error"]
+
+    def test_invalid_calendar_date_returns_error(self, tmp_path: Path) -> None:
+        result = read_ledger("2026-02-30", tmp_path)
+        assert result["found"] is False
+        assert "YYYY-MM-DD" in result["error"]
