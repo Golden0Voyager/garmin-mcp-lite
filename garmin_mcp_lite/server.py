@@ -16,6 +16,7 @@ from garmin_mcp_lite.tools import (
     healthkit,
     hr_trend,
     hrv,
+    ledger,
     race_prediction,
     records,
     status,
@@ -72,6 +73,7 @@ mcp.add_tool(weight_sync.sync_weight, name="garmin_sync_weight")
 mcp.add_tool(healthkit.sync_healthkit, name="garmin_sync_healthkit")
 mcp.add_tool(hrv.get_hrv_status, name="garmin_hrv_status")
 mcp.add_tool(dive.get_dive_logs, name="garmin_dive_logs")
+mcp.add_tool(ledger.read_ledger, name="garmin_ledger_read")
 
 
 def main():

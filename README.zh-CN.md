@@ -19,11 +19,11 @@
 
 精简版 Garmin MCP 服务器，专为耐力运动爱好者设计。
 
-提取了进行深度运动数据分析最核心的 28 个接口（涵盖跑步、骑行、游泳、潜水、力量、健康及体成分数据），完美替代臃肿的 80+ 接口方案。
+提取了进行深度运动数据分析最核心的 29 个接口（涵盖跑步、骑行、游泳、潜水、力量、健康及体成分数据），完美替代臃肿的 80+ 接口方案。
 
 其中 21 个是只读，七个会写入：`garmin_add_body_composition` 记一条手动体重，`garmin_sync_weight` 从小米体脂秤拉取，`garmin_sync_healthkit` 接收苹果健康桥接的数据，`garmin_schedule_running_workout` / `garmin_schedule_cycling_workout` 向日历写入并排期跑步与骑行课表，`garmin_add_event` / `garmin_delete_event` 添加和删除赛事日历。
 
-## 核心工具（28 个替代 80+）
+## 核心工具（29 个替代 80+）
 
 ### 🔧 状态自检
 
@@ -188,8 +188,35 @@ Chatbox 这类客户端从 Finder 启动，**不继承** shell 的 `PATH`，直�
 |:---|:---|:---|
 | `GARMIN_IS_CN` | 未设置 | 中国区账号（garmin.cn）设为 `true`，必须与登录时使用的区域一致 |
 | `GARMIN_TOKEN_DIR` | `~/.garmin-mcp-lite` | Token 存放目录，多账号时用来隔离 |
+| `GARMIN_LEDGER_DIR` | `~/.garmin-mcp-lite/ledger` | 每日 JSON/Markdown 台账目录 |
+| `GARMIN_LOG_DIR` | `~/.garmin-mcp-lite/logs` | 轮转且脱敏后的台账日志目录 |
 | `GARMIN_HEALTH_FILE` | iCloud 云盘 `garmin/weight.txt` | 苹果健康桥接快捷指令追加的文件路径 |
 | `GARMIN_EMAIL` / `GARMIN_PASSWORD` | 未设置 | 仅登录脚本使用，服务器本身不需要 |
+
+### 每日台账 CLI
+
+`garmin-mcp-lite-ledger` 可以不经过 MCP 客户端，直接写入本地私密台账：
+
+```bash
+garmin-mcp-lite-ledger morning
+garmin-mcp-lite-ledger evening
+garmin-mcp-lite-ledger morning --date 2026-11-26  # 补跑某天晨间记录
+```
+
+每天在 `~/.garmin-mcp-lite/ledger/` 生成 `YYYY-MM-DD.json`（权威数据）和 `YYYY-MM-DD.md`（可读报告）。晨间记录合并 HRV 状态、个人基线、睡眠分期与恢复建议；晚间复盘汇总当天全部活动、训练负荷/效果和当前训练状态。历史日期补跑晚间活动时，活动仍按指定日期读取，但训练状态会明确标注为“运行时当前状态”。
+
+可用 `GARMIN_LEDGER_DIR` 和 `GARMIN_LOG_DIR` 修改目录。目录权限为 `0700`、文件权限为 `0600`，写入带文件锁和原子替换，日志脱敏并轮转。部分成功时保留已取到的数据，但退出码为非 0。
+
+#### Qoder Desktop 自动化
+
+在 Qoder Desktop 中创建两个**本地**自动化：
+
+| 名称 | 计划 | 命令 |
+|:---|:---|:---|
+| `Garmin 晨间恢复台账` | 每天 10:00，`Asia/Shanghai` | `uv run garmin-mcp-lite-ledger morning` |
+| `Garmin 晚间训练复盘` | 每天 22:00，`Asia/Shanghai` | `uv run garmin-mcp-lite-ledger evening` |
+
+工作目录设置为当前仓库。每个 prompt 只允许运行对应命令，要求退出码为 0 且生成当日 Markdown，禁止读取或输出凭据，失败时只报告脱敏错误。定时执行时 Qoder 必须保持运行；开启 **Keep device awake** 和所需的 **Execution authorization**，并在 **Automations → Run history** 中检查每次结果。
 
 ### 常见问题
 
@@ -211,7 +238,7 @@ printf '%s\n' \
  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' | garmin-mcp-lite
 ```
 
-正常情况下会返回 `serverInfo`（版本号为本包版本）和全部 20 个工具。
+正常情况下会返回 `serverInfo`（版本号为本包版本）和全部 29 个工具。
 
 ## 同步小米体脂秤
 
