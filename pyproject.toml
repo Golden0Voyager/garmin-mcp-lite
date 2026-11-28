@@ -50,6 +50,8 @@ garmin-mcp-lite-xiaomi-login = "garmin_mcp_lite.xiaomi_login:main"
 # One guided entry point for both logins; reuses login.run_login and
 # xiaomi_login.run underneath.
 garmin-mcp-lite-setup = "garmin_mcp_lite.setup:main"
+# Deterministic local morning/evening ledger used by Qoder automations.
+garmin-mcp-lite-ledger = "garmin_mcp_lite.tools.ledger:main"
 
 [project.optional-dependencies]
 dev = [
