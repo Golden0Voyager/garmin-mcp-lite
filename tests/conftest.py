@@ -23,6 +23,7 @@ _TOOL_MODULES = [
     "garmin_mcp_lite.tools.healthkit",
     "garmin_mcp_lite.tools.hr_trend",
     "garmin_mcp_lite.tools.hrv",
+    "garmin_mcp_lite.tools.ledger",
     "garmin_mcp_lite.tools.race_prediction",
     "garmin_mcp_lite.tools.records",
     "garmin_mcp_lite.tools.strength",
